@@ -1,0 +1,123 @@
+"""server/api.py — REST endpoints for loading a document + serving the PDF.
+
+The browser talks to these to (a) discover what is loaded, (b) load a PDF by
+path or by upload (drag-drop), and (c) fetch the raw PDF bytes for PDF.js.
+
+Provider credentials are reported to the UI by *name only* (never the value)
+so the user can see which secrets the OS environment exposes (A6).
+"""
+
+from __future__ import annotations
+
+import logging
+import tempfile
+import time
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse
+
+from ..config import provider_env
+from ..ingest import open_pdf
+
+log = logging.getLogger("ownvoicereader.api")
+
+
+# --------------------------------------------------------------------------- #
+# Loading helpers (shared with app.py)
+# --------------------------------------------------------------------------- #
+def load_document_by_path(state, path: str) -> None:
+    """Open a PDF on disk and record it as the active document."""
+    try:
+        doc = open_pdf(path)
+        state.document = doc
+        state.pdf_path = doc.source_path
+        state.load_error = None
+        log.info("loaded document: %s (%d pages)", doc.title, doc.page_count)
+    except Exception as exc:  # surface a friendly message to the UI
+        state.load_error = str(exc)
+        state.document = None
+        state.pdf_path = None
+        log.error("failed to load %s: %s", path, exc)
+
+
+def load_uploaded(state, content: bytes, filename: str) -> None:
+    """Persist an uploaded PDF to a per-session temp dir and load it."""
+    tmp = state.temp_dir or Path(tempfile.gettempdir()) / "ownvoicereader"
+    tmp.mkdir(parents=True, exist_ok=True)
+    safe = Path(filename or "upload.pdf").name or "upload.pdf"
+    dest = tmp / f"upload_{int(time.time() * 1000)}_{safe}"
+    try:
+        dest.write_bytes(content)
+    except OSError as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"could not store upload: {exc}")
+    state.temp_dir = tmp
+    load_document_by_path(state, str(dest))
+
+
+def _info_payload(state) -> dict:
+    """The JSON the viewer uses to decide what to show."""
+    if state.document is None:
+        return {
+            "loaded": False,
+            "document": None,
+            "load_error": state.load_error,
+            "providers": _provider_names(),
+        }
+    return {
+        "loaded": True,
+        "document": state.document.to_dict(),
+        "load_error": None,
+        "providers": _provider_names(),
+    }
+
+
+def _provider_names() -> list[str]:
+    """Names of provider env vars currently set in the OS environment.
+
+    Values are NEVER included — only the presence of a secret is reported so
+    the user knows what the app can (and will not) see.
+    """
+    return sorted(provider_env().keys())
+
+
+# --------------------------------------------------------------------------- #
+# Router
+# --------------------------------------------------------------------------- #
+def build_api_router(state) -> APIRouter:
+    router = APIRouter(prefix="/api", tags=["api"])
+
+    @router.get("/info")
+    async def info() -> JSONResponse:
+        return JSONResponse(_info_payload(state))
+
+    @router.get("/providers")
+    async def providers() -> JSONResponse:
+        return JSONResponse({"providers": _provider_names()})
+
+    @router.get("/load")
+    async def load_by_path(path: str = Query(..., description="absolute or ~ path")) -> JSONResponse:
+        load_document_by_path(state, path)
+        if state.document is None:
+            raise HTTPException(status_code=400, detail=state.load_error or "could not load PDF")
+        return JSONResponse(_info_payload(state))
+
+    @router.post("/load")
+    async def load_upload(file: UploadFile = File(...)) -> JSONResponse:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="empty upload")
+        load_uploaded(state, content, file.filename or "upload.pdf")
+        if state.document is None:
+            raise HTTPException(status_code=400, detail=state.load_error or "could not load PDF")
+        return JSONResponse(_info_payload(state))
+
+    @router.post("/unload")
+    async def unload() -> JSONResponse:
+        state.document = None
+        state.pdf_path = None
+        state.load_error = None
+        return JSONResponse(_info_payload(state))
+
+    return router

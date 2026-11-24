@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OwnVoiceReader</title>
+  <!-- Vendored PDF.js (offline). Loaded before transport.js. -->
+  <script src="/viewer/vendor/pdfjs/pdf.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --bg-elev: #171a21;
+      --bg-card: #1c2029;
+      --fg: #e7e9ee;
+      --fg-dim: #9aa3b2;
+      --accent: #6ea8fe;
+      --accent-dim: #2d3a52;
+      --ok: #57d97a;
+      --warn: #f0b429;
+      --err: #f2555a;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: var(--bg); color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+    }
+    body { display: flex; flex-direction: column; height: 100vh; }
+
+    header {
+      display: flex; align-items: baseline; gap: 12px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: var(--bg-elev);
+    }
+    header h1 { font-size: 17px; margin: 0; letter-spacing: 0.5px; }
+    .subtitle { color: var(--fg-dim); font-style: italic; }
+    .doc-info { margin-left: auto; color: var(--fg-dim); font-size: 12px; text-align: right; }
+    .doc-info .title { color: var(--fg); }
+    .badge {
+      display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px;
+      font-size: 11px; background: var(--accent-dim); color: var(--accent);
+    }
+    .badge.env { background: #243020; color: var(--ok); }
+
+    .screen { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    .hidden { display: none !important; }
+
+    /* Landing / drop zone */
+    #landing { display: grid; place-items: center; }
+    .drop {
+      width: min(560px, 90vw); text-align: center;
+      border: 2px dashed var(--border); border-radius: 14px;
+      padding: 48px 24px; background: var(--bg-card);
+      transition: border-color .15s, background .15s;
+    }
+    .drop.dragover { border-color: var(--accent); background: var(--accent-dim); }
+    .drop-title { font-size: 20px; margin: 0 0 6px; }
+    .drop-sub { color: var(--fg-dim); margin: 0 0 16px; }
+    .drop-hint { color: var(--fg-dim); margin: 16px 0 0; font-size: 12px; }
+    code { background: #0b0d12; padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+
+    button {
+      background: var(--bg-card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 14px; font-size: 14px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    #open-btn { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
+
+    /* Reader */
+    #pdf-wrap { display: grid; place-items: start center; padding: 16px; }
+    #pdf-canvas {
+      background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+      border-radius: 2px; max-width: 100%;
+    }
+
+    /* Control bar */
+    footer#controls {
+      display: flex; align-items: center; gap: 18px;
+      padding: 10px 16px; border-top: 1px solid var(--border);
+      background: var(--bg-elev); flex-wrap: wrap;
+    }
+    .group { display: flex; align-items: center; gap: 8px; }
+    .group > button { padding: 6px 10px; }
+    .group input[type=number] {
+      width: 44px; background: var(--bg-card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; text-align: center; padding: 4px;
+    }
+    .group > span { color: var(--fg-dim); }
+    #zoom-label { min-width: 48px; text-align: center; color: var(--fg-dim); }
+    .voice-controls { margin-left: auto; }
+    .voice-controls.disabled { opacity: 0.5; }
+    .m1-note { color: var(--warn); font-size: 11px; }
+
+    /* Status line */
+    .status {
+      padding: 4px 16px; font-size: 12px; color: var(--fg-dim);
+      background: var(--bg); border-top: 1px solid var(--border);
+      min-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .status.err { color: var(--err); }
+    .status.ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OwnVoiceReader</h1>
+    <span class="subtitle">your model, your voice, your machine</span>
+    <div class="doc-info" id="doc-info"></div>
+  </header>
+
+  <!-- Landing (no document loaded) -->
+  <section id="landing" class="screen">
+    <div id="drop" class="drop">
+      <p class="drop-title">Drop a PDF here</p>
+      <p class="drop-sub">or</p>
+      <button id="open-btn">Open a PDF…</button>
+      <input type="file" id="file-input" accept="application/pdf,.pdf" hidden />
+      <p class="drop-hint">…or run <code>ownvoicereader paper.pdf</code> to open one directly.</p>
+    </div>
+  </section>
+
+  <!-- Reader -->
+  <section id="reader" class="screen hidden">
+    <div id="pdf-wrap">
+      <canvas id="pdf-canvas"></canvas>
+    </div>
+  </section>
+
+  <!-- Control bar (shown once a document is loaded) -->
+  <footer id="controls" class="hidden">
+    <div class="group" title="page navigation">
+      <button id="prev-page" title="Previous page (←)">◀</button>
+      <input id="page-input" type="number" min="1" value="1" title="Go to page" />
+      <span>/</span>
+      <span id="page-count">–</span>
+      <button id="next-page" title="Next page (→)">▶</button>
+    </div>
+    <div class="group" title="zoom">
+      <button id="zoom-out" title="Zoom out (−)">−</button>
+      <button id="zoom-fit" title="Fit width">Fit</button>
+      <button id="zoom-in" title="Zoom in (+)">+</button>
+      <span id="zoom-label">110%</span>
+    </div>
+    <div class="group voice-controls disabled" id="voice-controls"
+         title="Reading/voice controls arrive in M1 (text reader)">
+      <button id="btn-prev" title="Previous chunk">⏮</button>
+      <button id="btn-play" title="Play / Pause">▶</button>
+      <button id="btn-stop" title="Stop">⏹</button>
+      <button id="btn-next" title="Next chunk">⏭</button>
+      <span class="m1-note">reading controls → M1</span>
+    </div>
+  </footer>
+
+  <div id="status" class="status">starting…</div>
+
+  <script src="/viewer/transport.js"></script>
+</body>
+</html>
