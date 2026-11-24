@@ -16,7 +16,12 @@ from ownvoicereader.ingest.reading_order import (
 )
 from ownvoicereader.ingest.text_extractor import Line, flag_sparse_pages
 from ownvoicereader.model import Block, BBox, ReadingDocument, BlockKind
-from ownvoicereader.reader.orchestrator import build_cues, _is_page_number_or_stray
+from ownvoicereader.reader.orchestrator import (
+    build_cues,
+    _is_page_number_or_stray,
+    _split_into_chunks,
+    _MAX_CHUNK_CHARS,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -169,3 +174,76 @@ def test_generated_two_column_pdf_orders_columns():
     # Both columns present, and left column reads before right column.
     assert "LEFTCOL-A" in text and "RIGHTCOL-A" in text
     assert text.index("LEFTCOL-A") < text.index("LEFTCOL-B") < text.index("RIGHTCOL-A"), text
+
+
+# --------------------------------------------------------------------------- #
+# Chunker — the "no sentence is ever dropped" invariant (M1.5)
+#
+# A prior version of _split_into_chunks silently dropped a whole sentence
+# whenever a sentence didn't fit the rest of the running chunk and was itself
+# under the max — which made prose vanish mid-paragraph during playback. These
+# tests pin the invariant so it can't regress.
+# --------------------------------------------------------------------------- #
+def test_split_into_chunks_drops_no_sentence():
+    # A body with short, medium, and long (> max) sentences, plus line-broken
+    # hyphenation like a real PDF ("pre- diction").
+    text = (
+        "First sentence is short. "
+        "This one is a little bit longer but still under the chunk character "
+        "limit that the synthesizer prefers so it stays a natural phrase. "
+        "Embedding models constitute the main link pre- diction approach to "
+        "complete knowledge graphs and they have become especially valuable for "
+        "recommender systems, web search, and a great many other downstream "
+        "applications across academia and industry in recent years. "
+        "x " * 40 + "x. "  # a single over-long "sentence" that must word-break
+        "We find that high-performance models produce divergent predictions. "
+        "Short. Another short one. And yet another."
+    )
+    chunks = _split_into_chunks(text)
+    # 1) No word is lost: the multiset of whitespace tokens is identical.
+    assert " ".join(chunks).split() == text.split()
+    # 2) No chunk exceeds the cap (over-long sentences are word-broken).
+    assert all(len(c) <= _MAX_CHUNK_CHARS for c in chunks)
+    # 3) No empty chunks.
+    assert all(c.strip() for c in chunks)
+
+
+def test_split_into_chunks_springer_front_matter_regression():
+    """The exact front-matter block that used to lose ~40% of its words."""
+    block = (
+        "Link Prediction or Perdition: the Seeds of Instability in Knowledge "
+        "Graph Embeddings Guillaume Meroue[0009-0004-7111-3202], Fabien Gandon, "
+        "and Pierre Monnin. Universite Cote d'Azur, Inria, CNRS, I3S, France "
+        "firstname.lastname@inria.fr arXiv:2606.03365v1 [cs.LG] 2 Jun 2026 "
+        "Abstract. Embedding models (KGEMs) constitute the main link pre- "
+        "diction approach to complete knowledge graphs. Standard evaluation "
+        "protocols emphasize rank-based metrics such as MRR or Hits@K, but "
+        "usually overlook the influence of random seeds on result stability. "
+        "Moreover, these metrics conceal potential instabilities in individual "
+        "predictions and in the organization of embedding spaces. In this work, "
+        "we conduct a systematic stability analysis of multiple KGEMs across "
+        "several datasets. We find that high-performance models actually produce "
+        "divergent predictions at the triple level and highly variable embedding "
+        "spaces. By isolating stochastic factors, we show that each independently "
+        "induces instability of comparable magnitude. Furthermore, for a given "
+        "model, hy- perparameter configurations with better MRR are not "
+        "guaranteed to be more stable. Moreover, voting, albeit a known "
+        "remediation mechanism, only provides a limited enhancement of stability."
+    )
+    chunks = _split_into_chunks(block)
+    assert " ".join(chunks).split() == block.split()  # 0 words lost
+    # The specific sentences that used to vanish are all present.
+    joined = " ".join(chunks)
+    for probe in ("Embedding models (KGEMs) constitute the main link pre-",
+                  "conceal potential instabilities in individual predictions",
+                  "high-performance models actually produce divergent",
+                  "hy- perparameter configurations with better MRR"):
+        assert probe in joined, probe
+
+
+def test_split_into_chunks_is_idempotent_on_rejoin():
+    """Re-chunking the concatenation never changes the word multiset."""
+    text = ("Alpha beta gamma delta epsilon. " * 30)
+    once = _split_into_chunks(text)
+    twice = _split_into_chunks(" ".join(once))
+    assert " ".join(once).split() == " ".join(twice).split() == text.split()

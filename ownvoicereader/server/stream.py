@@ -13,13 +13,12 @@ Server -> browser  (text JSON frames, then a binary WAV frame per cue)
     {type:"notice"/"error", text}              # engine-level messages
 
 Browser -> server  (text JSON frames)
-    {cmd:"start"}    begin/continue from the current position
-    {cmd:"resume"}   resume after a pause
-    {cmd:"continue"} pull the *next* cue (the browser throttles with this)
+    {cmd:"start"}    begin/continue from the current position (state-only)
+    {cmd:"resume"}   resume after a pause (state-only — produces nothing)
+    {cmd:"continue"} pull the *next* cue — the **sole** forward producer
     {cmd:"pause"}    pause playback (the browser also pauses its <audio>)
     {cmd:"stop"}     stop and reset to the start
-    {cmd:"skip"}     skip the current cue
-    {cmd:"replay"}   re-speak the last cue
+    (skip / replay are handled client-side in transport.js, losslessly)
     {cmd:"set_style", style} / {cmd:"set_voice", voice}   live switch (M4)
     {cmd:"status"}   request the current playback status
 
@@ -120,9 +119,16 @@ def build_stream_router(state) -> APIRouter:
                     orch = _make_orchestrator(state)
 
                 if cmd == "start" or cmd == "resume":
+                    # State-only: the viewer pulls each cue with `continue`, so a
+                    # resume never synthesizes a cue the client may already hold as
+                    # its lookahead. This is what makes pause/resume *lossless* —
+                    # the server's playhead is the single source of truth, and only
+                    # `continue` advances it.
                     orch.resume()
-                    await _produce_and_send(websocket, orch)
+                    await websocket.send_json({"type": "state", **orch.status()})
                 elif cmd == "continue":
+                    # The sole forward producer: synthesize the cue at the current
+                    # playhead and advance past it. Returns `end` when finished.
                     if orch.done:
                         await websocket.send_json({"type": "end"})
                     else:
@@ -133,26 +139,10 @@ def build_stream_router(state) -> APIRouter:
                 elif cmd == "stop":
                     orch.stop()
                     await websocket.send_json({"type": "state", **orch.status()})
-                elif cmd == "skip":
-                    orch.skip()
-                    await _produce_and_send(websocket, orch)
-                elif cmd == "replay":
-                    result = await orch.replay()
-                    if result is None:
-                        await websocket.send_json({"type": "notice", "text": "nothing to replay"})
-                    else:
-                        event, audio = result
-                        await _send_event(websocket, event)
-                        if audio is not None and orch.tts is not None:
-                            await websocket.send_json({
-                                "type": "audio",
-                                "cue_index": event.meta.get("index", 0),
-                                "block_id": event.block_id,
-                                "page": event.page,
-                                "sample_rate": getattr(orch.tts, "sample_rate", 22050),
-                                "length": len(audio),
-                            })
-                            await websocket.send_bytes(audio)
+                # `skip` and `replay` are handled client-side in transport.js so they
+                # can be lossless and predictable: the client owns its lookahead
+                # queue and re-plays a kept blob, instead of the server advancing
+                # past a cue it produced-but-the-client-has-not-heard.
                 elif cmd == "set_style":
                     name = orch.set_style(msg.get("style", ""))
                     st = orch.status()

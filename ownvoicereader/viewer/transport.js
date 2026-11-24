@@ -284,6 +284,7 @@
       this.playing = false;
       this.queue = [];           // pending Audio objects (lookahead buffer)
       this.current = null;       // the Audio currently playing
+      this.lastBlob = null;      // blob of the last cue actually heard (for replay)
       this.waitingForCue = false;
       this.expectingAudio = false;
       this.audioMeta = null;
@@ -396,6 +397,13 @@
           positionHighlight(this.currentBBox);
         }
       }
+      // A `notice` event carries no audio (e.g. a TTS failure the server skipped).
+      // Clear the "waiting for this cue's audio" flag and pull the next cue so the
+      // stream doesn't stall on a cue that produced no sound.
+      if (ev.type === "notice") {
+        this.waitingForCue = false;
+        this.maybeFetchMore();
+      }
     }
 
     onBinary(data) {
@@ -404,6 +412,7 @@
       const blob = new Blob([data], { type: "audio/wav" });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      audio._blob = blob;   // keep the bytes so we can re-play this cue (replay)
       this.queue.push(audio);
       // A cue fully arrived: we may fetch the next one (lookahead).
       this.waitingForCue = false;
@@ -418,6 +427,8 @@
       if (this.queue.length) {
         this.current = this.queue.shift();
         this.current.onended = () => {
+          this.lastBlob = this.current._blob || null;  // remember the cue we
+          // just finished, so "replay" (rollback) re-hears it — not the next one.
           this.current = null;
           this.pump();
           this.maybeFetchMore();
@@ -479,12 +490,12 @@
       if (this.state === "done") { this.restart(); return; }
       this.playing = true;
       el.btnPlay.textContent = "⏸";
+      // `resume` is state-only on the server; we pull each cue with `continue`
+      // (via maybeFetchMore), so a resume never produces a cue we already hold.
+      this.send({ cmd: "resume" });
       if (this.current && this.current.paused) {
         try { await this.current.play(); } catch (_) {}
       }
-      // Tell the server to (re)start / resume producing from the current
-      // position; this also syncs its state to "playing".
-      this.send({ cmd: "resume" });
       this.pump();
       this.maybeFetchMore();
     }
@@ -492,7 +503,9 @@
     pause() {
       this.playing = false;
       if (this.current && !this.current.paused) this.current.pause();
-      this.queue.length = 0; // drop the lookahead; resume refetches
+      // KEEP the lookahead: the server's playhead already advanced past it, so
+      // discarding it here would skip that cue when we resume. We resume it from
+      // the queue instead.
       this.send({ cmd: "pause" });
       el.btnPlay.textContent = "▶";
       setStatus("paused", "");
@@ -523,26 +536,33 @@
       setTimeout(() => this.play(), 150);
     }
 
+    // Skip forward to the next cue. Lossless: stop the current cue and let the
+    // next one (the lookahead already in the queue, or a fresh `continue`) play.
+    // Nothing produced-but-unheard is discarded.
     skip() {
       if (this.current) { this.current.pause(); this.current = null; }
-      this.queue.length = 0;
       this.playing = true;
       el.btnPlay.textContent = "⏸";
-      this.waitingForCue = true;
-      this.send({ cmd: "skip" });
+      this.pump();           // play the queued lookahead, if any
+      this.maybeFetchMore(); // else fetch the next cue
     }
 
+    // Roll back to (re-hear) the last cue we actually played. Client-side: we
+    // kept its blob, so no server round-trip and nothing is skipped.
     replay() {
       if (this.current) { this.current.pause(); this.current = null; }
-      this.queue.length = 0;
-      this.playing = true;      // play the re-emitted cue even if we were paused
-      this.waitingForCue = true;
+      if (!this.lastBlob) { setStatus("nothing to replay yet", ""); return; }
+      this.current = new Audio(URL.createObjectURL(this.lastBlob));
+      this.current.onended = () => {
+        this.current = null; this.pump(); this.maybeFetchMore();
+      };
+      this.playing = true;
       el.btnPlay.textContent = "⏸";
-      this.send({ cmd: "replay" });
+      try { this.current.play(); } catch (_) {}
     }
 
-    // When a `continue`/`skip`/`start`/`replay` produced its cue (audio or end),
-    // the flag is cleared in onBinary / onEnd.
+    // `waitingForCue` is set when a `continue` goes out and cleared when its
+    // audio (or end) arrives, in onBinary / onEnd.
 
     // --- UI wiring -----------------------------------------------------
     enableControls(enabled) {

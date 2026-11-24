@@ -73,34 +73,53 @@ def _is_page_number_or_stray(text: str) -> bool:
 
 
 def _split_into_chunks(text: str) -> list[str]:
-    """Split prose into TTS-sized sentence-group chunks."""
+    """Split prose into TTS-sized sentence-group chunks.
+
+    **No sentence is ever dropped.** When a sentence does not fit the rest of the
+    current chunk it becomes the start of the *next* chunk — the remainder is
+    carried forward, not discarded (a prior version lost it, which is what made
+    whole sentences vanish mid-paragraph during playback). A single over-long
+    "sentence" is broken on word boundaries. Consequently the concatenation of the
+    returned chunks contains every word of the input — asserted in the test-suite.
+    """
     parts = _SENTENCE_SPLIT.split(text.strip())
     chunks: list[str] = []
     cur = ""
+
+    def flush() -> None:
+        nonlocal cur
+        if cur:
+            chunks.append(cur)
+        cur = ""
+
     for p in parts:
         p = p.strip()
         if not p:
             continue
-        if len(cur) + len(p) <= _MAX_CHUNK_CHARS:
-            cur = (cur + " " + p).strip()
-            continue
-        if cur:
-            chunks.append(cur)
-            cur = ""
         if len(p) > _MAX_CHUNK_CHARS:
-            # A single over-long "sentence": break on words.
+            # An over-long single "sentence": flush the pending chunk, then break
+            # it on word boundaries so no chunk exceeds the limit.
+            flush()
             buf = ""
             for w in p.split():
-                if len(buf) + len(w) + 1 > _MAX_CHUNK_CHARS:
-                    if buf:
-                        chunks.append(buf)
+                if buf and len(buf) + 1 + len(w) > _MAX_CHUNK_CHARS:
+                    chunks.append(buf)
                     buf = w
                 else:
-                    buf = (buf + " " + w).strip()
+                    buf = w if not buf else buf + " " + w
             cur = buf
-    if cur.strip():
-        chunks.append(cur.strip())
-    return [c for c in chunks if len(c) >= 1]
+            continue
+        # A normal sentence: append it to the running chunk if it fits, else start
+        # a fresh chunk with it. The sentence is never lost either way.
+        if not cur:
+            cur = p
+        elif len(cur) + 1 + len(p) <= _MAX_CHUNK_CHARS:
+            cur = cur + " " + p
+        else:
+            flush()
+            cur = p
+    flush()
+    return chunks
 
 
 def build_cues(doc: ReadingDocument, config=None, scope=None) -> list[Cue]:

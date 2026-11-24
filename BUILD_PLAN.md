@@ -108,7 +108,87 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] `server/stream.py` — WebSocket: position, transcript, events, controls
 - [x] `viewer/transport.js` — WS client + audio queue + highlight + transcript + controls
 - [x] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
-> 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. Awaiting user audio smoke test._
+> 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. _Audio smoke test done (2026-11-24): it surfaced two defects — a **chunker sentence-drop** and **pause/skip** that skip or jump unpredictably — now fixed in **M1.5 Checkpoint 1** (20 tests, live read-through confirms the abstract sentence is spoken)._
+
+### M1.5 — Section-aware navigation + playback integrity  _status: [~] C1 done · C2 awaiting your listen_
+> Context: after the M1 audio smoke test two things surfaced — (1) **prose is
+> skipped** while listening, and (2) the **skip / rollback** controls are
+> **unpredictable** (they jump by an arbitrary 200-char cue, not by paper
+> section). M1.5 fixes both and adds the **authors/institutions** front-matter
+> block so the base reader is *reliable* before M2's figures/tables. It pulls
+> forward the navigation-relevant slice of M5 (section detection) **without** the
+> full selection UI, per A10.
+
+**Diagnosis (root causes, confirmed on the 1-col Springer sample)**
+- **Chunker drops whole sentences — THE single-run skip (CONFIRMED, ~40% word loss).**
+  `_split_into_chunks` has a logic bug: when the running chunk is non-empty and the
+  next sentence doesn't fit *and* that sentence is itself under the max, the code
+  flushes the running chunk, resets it to empty, and — because the sentence isn't
+  "over-long" — never assigns it back to the accumulator. **The sentence is
+  silently dropped.** On the Springer front-matter block it loses 4 sentences
+  (106 of 174 words), including the *opening and middle of the abstract* — exactly
+  "authors → middle of abstract", in a single continuous run. Affects every paper,
+  at essentially every chunk boundary. The one-line fix (carry the remainder into
+  the accumulator) recovers 100%.
+- **Pause/resume skip — CONFIRMED (secondary).** `transport.js` `pause()` runs
+  `this.queue.length = 0`, discarding the 1-cue *lookahead* — but the server had
+  already advanced its playhead `pos` past that cue. On resume the server emits the
+  *next* cue, so the dropped lookahead is **never heard**.
+- **Skip/rollback are cue-granular.** `skip()` advances `pos` by 1 *and* drops the
+  lookahead (loses ~2 cues); `replay()` re-speaks `_last` (the lookahead cue) without
+  resuming. A 200-char sentence-group is not a meaningful unit → "hard to predict".
+- **TTS-failure NOTICE stall (latent).** A cue whose synthesis fails emits a `notice`
+  with **no audio**; the client's `waitingForCue` flag never clears, stalling the
+  stream until the user re-presses play.
+- **Front matter is one merged block.** Title, authors, institutions, abstract and
+  keywords all merge into a single full-width block (gap-based merge), so they aren't
+  distinct sections; the author list also reappears as a running header (a *different*
+  string), so it is spoken **twice** instead of once.
+
+**Checkpoint 1 — playback integrity ("no prose is ever skipped, reliable pause/skip") — DONE 2026-11-24**
+- [x] **Fix the chunker (headline).** `_split_into_chunks` now carries the remainder
+      forward, so a sentence is **never dropped** (verified 174/174 words on the Springer
+      front-matter block; previously ~40% were lost, incl. the abstract opening + middle).
+      3 hermetic tests pin the invariant.
+- [x] **Playback integrity.** `resume` / `start` are **state-only** on the server; `continue`
+      is the sole forward producer, so the server's playhead is the single source of truth.
+      The client **keeps its 1-cue lookahead across pause** (no `queue.length = 0`), so
+      resume is lossless. `skip` / `replay` are now **client-side and predictable**: skip =
+      advance exactly one cue; replay = re-hear the last *finished* cue (rollback). A
+      TTS-failure `notice` now un-stalls the client (clears `waitingForCue`, pulls next).
+- [x] **Tests + esprima.** 3 new chunker tests (no-sentence-loss, over-long word-break,
+      Springer regression) → **20 tests pass**. `transport.js` esprima-clean. A faithful
+      client/server simulation proves: continuous play = every cue once, in order; pause/
+      resume = no gap / no duplicate; skip = +1 cue; replay = last finished cue. A live
+      server read-through confirms the previously-vanishing abstract sentence is now spoken.
+
+**Checkpoint 2 — section-aware navigation — PENDING (awaiting your listen + go-ahead)**
+> You chose: skip granularity = **section + subsection**; announce section names = **ON**.
+- [ ] `reader/sections.py` (pulled forward from M5) — detect a flat list of **sections**
+      from the ordered blocks, each with a **start cue-index**: `title`, `authors` +
+      `affiliations`, `abstract`, and numbered/bold **section / subsection** headings (A10
+      heuristics: font-size + bold + `^N(\.N)* ` / `Abstract` / `CCS Concepts` /
+      `References` / `Acknowledg…`). LLM refine stays an opt-in flag.
+- [ ] **Carry font info into `Block`** — add `font_size` / `is_bold` (or a `role` hint),
+      propagated from the dominant line of each merged block. `Line` already captures this;
+      `reading_order._merge_into_blocks` currently throws it away.
+- [ ] **Front-matter ordering** — read **title → authors + institutions → abstract** as
+      coherent full-width units *before* the body, independent of the 2-column layout;
+      de-dup the author running-header variant by **role** (not string) so authors are
+      spoken **once**.
+- [ ] **Section-aware skip / rollback (A9)** — next / previous snap to **section /
+      subsection** boundaries; a "now reading: <section>" indicator; keep a fine
+      "next paragraph" too.
+- [ ] **Announce section names (A9, you chose ON)** — speak a short lead-in like
+      "Section 3, Method" when entering / skipping to a section.
+- [ ] **Tests** — section detection on the 2-col + 1-col fixtures; front-matter ordering +
+      author-dedup; keep the 20 passing.
+- [ ] update `transport.js` controls + the "now reading" bar (`esprima`-clean); refresh
+      the A9 / A10 notes.
+
+> 📝 comment: _Checkpoint 1 (fast win) is built + verified — please **listen** on the
+> Springer / ACM samples and confirm the skip is gone and pause/skip feel reliable. Then
+> green-light Checkpoint 2 (section-aware navigation + spoken section names)._
 
 ### M2 — Figures & tables  _status: [ ] not started_
 - [ ] `ingest/figure_table.py` — pdfplumber (tables) + image crops (figures)
@@ -238,6 +318,7 @@ Ollama + local TTS/OCR.
 - [x] Sample paper chosen (§1.3): `test_pdfs/3799682.3840189.pdf` (FranKGraphBench, 6pp, 4-col)
 - [x] M0 complete — viewer + server + UI upload (2026-11-24)
 - [x] M1 complete — text reader: 2-col extract → reading order → Piper TTS → streamed WAV audio → pause/resume/stop/skip/replay (2026-11-24)
+- [~] **M1.5 Checkpoint 1 (playback integrity) done — awaiting your listen** (2026-11-24). Fixed the **chunker sentence-drop** (~40% word loss on the Springer front-matter block, incl. the abstract opening+middle), the **pause/resume lookahead drop**, **cue-granular skip/replay** (now client-side, predictable), and a latent **TTS-failure stall**. 20 tests pass; live read-through confirms the abstract sentence is now spoken. **Checkpoint 2 (section-aware navigation + spoken section names) is planned and awaiting your go-ahead.**
 - [ ] Ready to start **M2** (figures & tables + LLM explainer + first-reference `EXPLAIN` timeline)
 
 > 📝 comment: _M1 DONE, awaiting user audio smoke test. espeak-ng→Piper pivot (see M1 note). A6 (live model/voice/style in UI) — voice+style selects done in M1; LLM model select is M4. A9 (media-style forward/rollback controls) done in M1. A10 (LLM section-detect fallback) deferred to M2/M4._
