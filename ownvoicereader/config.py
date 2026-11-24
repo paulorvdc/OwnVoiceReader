@@ -47,11 +47,9 @@ class Config:
 
     # --- server (A13: 127.0.0.1 only, fixed default port, local-only) ---- #
     host: str = "127.0.0.1"
-    # A fixed, memorable default makes the URL stable and easy to open
-    # (and to reason about when debugging connections). A stable URL also
-    # means the browser reuses one cache entry, so the no-cache header keeps
-    # the viewer script fresh instead of a per-run random port churning it.
-    # 0 (or --port 0) means "pick a free high port" — the old default.
+    # A fixed, memorable default makes the URL stable and easy to open and to
+    # reason about when debugging connections. 0 (or --port 0) means "pick a
+    # free high port" — the old behaviour, still available.
     port: int = 6767
     open_browser: bool = True           # --no-browser disables
     local_only: bool = True            # forbid any cloud egress
