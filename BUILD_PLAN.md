@@ -70,7 +70,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ x] **A12 Headless/CI** — keep `ownvoicereader paper.pdf --auto --no-browser` (full auto-read to system audio, no UI)
   - [ x] accept  - [ ] override →
   > 📝 comment:
-- [ x] **A13 Server security** — bind **`127.0.0.1`** only, **random high port**, `--local-only` forbids any cloud egress
+- [ x] **A13 Server security** — bind **`127.0.0.1`** only, **fixed default port 6767** (0 = random free port, falls back to free if busy), `--local-only` forbids any cloud egress
   - [ x] accept  - [ ] override →
   > 📝 comment:
 - [ x] **A14 Resume** — JSON **checkpoint** of reading position so a paper can be reopened mid-read
@@ -214,7 +214,7 @@ Text and OCR feed this **same** shape, so the reader never branches on origin.
 - **Audio latency / interruptibility** → streamed chunks + HTML5 audio (A9) keep pause/stop instant.
 - **Dependency weight** → keep core light; gate heavy deps behind extras.
 - **Explanation length** → explainer prompts force *spoken*, short output (no LaTeX/markdown).
-- **Server hygiene** → `127.0.0.1` only, random port, local-only default (A13).
+- **Server hygiene** → `127.0.0.1` only, fixed default port 6767 (0 = random), local-only default (A13).
 
 > 📝 comment: _(risks you'd add)_
 

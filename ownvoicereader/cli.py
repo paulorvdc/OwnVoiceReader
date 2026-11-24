@@ -4,15 +4,15 @@ Usage
 -----
     ownvoicereader                         # landing page + drag-drop
     ownvoicereader paper.pdf               # open that PDF in the viewer
-    ownvoicereader paper.pdf --auto        # (headless read — M1; for M0 just serves)
+    ownvoicereader paper.pdf --auto        # headless read start-to-finish
     ownvoicereader paper.pdf --no-browser  # serve without opening a browser
-    ownvoicereader --port 8000             # pin the port (else a random high one)
+    ownvoicereader --port 8000             # pin a specific port
+    ownvoicereader --port 0                # a random free port (not the default)
     ownvoicereader --local-only            # forbid any cloud egress (default)
 
-For M0 the only fully-wired behaviours are: open the viewer, load a PDF (by
-path or drag-drop), render it with PDF.js, and serve on 127.0.0.1:<port>.
-The reading/voice/LLM flags are parsed and accepted so the CLI is stable, but
-their effects land in M1+.
+The server binds 127.0.0.1 on a fixed default port (6767) unless you pin
+another with --port (0 = random). The viewer renders the PDF with PDF.js and
+reads it aloud with a local voice; --auto reads start-to-finish headlessly.
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("pdf", nargs="?", help="path to a PDF (omit for the landing page)")
     p.add_argument("--host", default=None, help="bind host (default 127.0.0.1)")
-    p.add_argument("--port", type=int, default=None, help="bind port (default: random high port)")
+    p.add_argument("--port", type=int, default=None,
+                   help="bind port (default 6767; use 0 for a random free port)")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
     p.add_argument("--local-only", action="store_true",
                    help="forbid any cloud egress (this is the default)")

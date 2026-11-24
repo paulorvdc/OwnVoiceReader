@@ -1,8 +1,9 @@
 """server/app.py — FastAPI application factory + server runner.
 
-Responsibilities (M0):
+Responsibilities:
   * build a FastAPI app that serves the PDF.js viewer + the JSON API
-  * bind to 127.0.0.1 on a random high port (A13) unless the user pins one
+  * bind to 127.0.0.1 on a fixed default port (6767, A13) unless the user
+    pins one, or passes --port 0 for a random free high port
   * auto-open the browser (A9 default) unless --no-browser
   * keep a single in-process "reading state" (the currently loaded document)
 
@@ -201,6 +202,26 @@ def _run_headless(config: Config) -> int:
     return spoken
 
 
+def _ensure_free_port(host: str, port: int) -> int:
+    """Return ``port`` if it can be bound, else a free high port.
+
+    A fixed default (6767) is friendlier than a random one, but if that port
+    is already taken we fall back to a free port rather than crash — the
+    banner always prints the real URL, so the user is never stuck.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((host, port))
+            return port
+        except OSError:
+            pass
+    free = _free_port(host)
+    log.warning("port %d is busy on %s — using free port %d instead",
+                port, host, free)
+    return free
+
+
 def start(config: Config) -> int:
     """Entry point used by the CLI.
 
@@ -214,7 +235,13 @@ def start(config: Config) -> int:
         return _run_headless(config)
 
     host = config.host
-    port = config.port if config.port else _free_port(host)
+    # 0 (or an unset port) means "pick a free high port"; a concrete port is
+    # used as-is, but if it's busy we fall back to a free one so the app
+    # always starts.
+    if not config.port:
+        port = _free_port(host)
+    else:
+        port = _ensure_free_port(host, config.port)
 
     state = ServerState(config=config, pdf_path=config.pdf_path)
     # Load the document eagerly when a path was given so /api/info is correct

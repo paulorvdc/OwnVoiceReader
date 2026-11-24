@@ -20,8 +20,8 @@ open a PDF directly — that path exists for headless / CI use
 This is at **Milestone M1 — Text reader** (built 2026-11-24, awaiting your
 audio smoke test). What works today:
 
-- ✅ `ownvoicereader` starts a local server (127.0.0.1, random high port) and
-  opens your browser to a clean viewer.
+- ✅ `ownvoicereader` starts a local server (127.0.0.1, fixed default port
+  **6767**) and opens your browser to a clean viewer.
 - ✅ **Upload a PDF in the UI** — drag-drop onto the landing page or use the
   "Open a PDF…" button. The PDF is served back to the browser over HTTP.
 - ✅ **PDF.js** renders the document (page navigation, zoom, fit-width, keyboard).
@@ -36,7 +36,8 @@ audio smoke test). What works today:
 - ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`) + a PDF byte endpoint
   (`/pdf`, with HTTP range support for large files) + a `/ws` transport for
   events + audio.
-- ✅ Server hygiene (A13): binds `127.0.0.1` only, random port, local-only by
+- ✅ Server hygiene (A13): binds `127.0.0.1` only, a **fixed default port
+  (6767)** that falls back to a free port if busy, local-only by
   default. Provider secrets are read from the OS environment **by name only**
   (never printed, never written to disk) — see *Security*.
 
@@ -135,11 +136,12 @@ ownvoicereader path/to/paper.pdf --auto --no-browser
 # Headless with the system audio device instead of the browser
 ownvoicereader path/to/paper.pdf --auto --no-browser --playback system
 
-# Pin the port instead of a random high one
+# Pin a specific port (default is 6767); 0 = a random free port
 ownvoicereader --port 8000
+ownvoicereader --port 0
 ```
 
-A banner prints the local URL, e.g. `serving: http://127.0.0.1:51234/`. The
+A banner prints the local URL, e.g. `serving: http://127.0.0.1:6767/`. The
 browser opens automatically; press **Ctrl-C** to stop.
 
 ### The UI-upload flow (M0)
@@ -172,7 +174,7 @@ ownvoicereader/            # the Python package
 ├─ reader/
 │  └─ orchestrator.py      # cues; pause/resume/stop/skip/replay (M1)
 ├─ server/
-│  ├─ app.py               # FastAPI app + server runner (127.0.0.1, random port)
+│  ├─ app.py               # FastAPI app + server runner (127.0.0.1, port 6767)
 │  ├─ api.py               # /api/info, /api/load, /api/unload (+ voice info)
 │  └─ stream.py            # /ws transport: events + audio + controls (M1)
 ├─ viewer/
@@ -202,7 +204,8 @@ Block(kind: Text|Figure|Table, source: text|ocr, text, image,
 ## Security
 
 - **Local-only by default (A13).** The server binds `127.0.0.1` (never your LAN)
-  and picks a **random high port** so it doesn't collide or get guessed.
+  on a **fixed default port (6767)** — easy to open and reason about — falling
+  back to a free port if that one is already busy.
 - **No cloud egress by default.** `--local-only` is the default; provider
   access is opt-in.
 - **Secrets stay in your environment (A6).** API keys (`OPENAI_API_KEY`,
@@ -223,7 +226,7 @@ Environment variables (prefix `OWNVOICEREADER_`):
 | Variable | Default | Meaning |
 |---|---|---|
 | `OWNVOICEREADER_HOST` | `127.0.0.1` | bind host |
-| `OWNVOICEREADER_PORT` | *(random)* | bind port |
+| `OWNVOICEREADER_PORT` | `6767` | bind port (`0` = a random free port) |
 | `OWNVOICEREADER_PLAYBACK` | `browser` | `browser` (HTML5) / `system` (aplay) / `null` |
 | `OWNVOICEREADER_LOCAL_ONLY` | `true` | forbid cloud egress |
 | `OWNVOICEREADER_LLM_MODEL` | — | e.g. `ollama/qwen3:8b` (used from M2) |

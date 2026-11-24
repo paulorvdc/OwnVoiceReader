@@ -45,9 +45,14 @@ class Config:
     # --- document ------------------------------------------------------- #
     pdf_path: Optional[str] = None
 
-    # --- server (A13: 127.0.0.1 only, random high port, local-only) ----- #
+    # --- server (A13: 127.0.0.1 only, fixed default port, local-only) ---- #
     host: str = "127.0.0.1"
-    port: Optional[int] = None          # None => pick a free high port
+    # A fixed, memorable default makes the URL stable and easy to open
+    # (and to reason about when debugging connections). A stable URL also
+    # means the browser reuses one cache entry, so the no-cache header keeps
+    # the viewer script fresh instead of a per-run random port churning it.
+    # 0 (or --port 0) means "pick a free high port" — the old default.
+    port: int = 6767
     open_browser: bool = True           # --no-browser disables
     local_only: bool = True            # forbid any cloud egress
 
