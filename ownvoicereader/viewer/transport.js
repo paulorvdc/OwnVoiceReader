@@ -299,7 +299,14 @@
 
     connect() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      this.ws = new WebSocket(proto + "//" + location.host + "/ws");
+      const wsUrl = proto + "//" + location.host + "/ws";
+      const ver = (typeof window.__OV_VER__ !== "undefined")
+        ? window.__OV_VER__ : "old(no-inject)";
+      // Show the running build + the exact URL in the status bar so a stale
+      // cached script is visible at a glance, and log it for the console.
+      setStatus("v" + ver + " · connecting to " + wsUrl + "…", "");
+      console.log("[ownvoicereader] v" + ver + " connecting to " + wsUrl);
+      this.ws = new WebSocket(wsUrl);
       this.ws.onmessage = (e) => this.onMessage(e);
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;

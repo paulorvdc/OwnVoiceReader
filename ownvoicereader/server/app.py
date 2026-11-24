@@ -13,6 +13,7 @@ only holds the loaded document so the browser can fetch /pdf and /api/info.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import socket
 import threading
@@ -23,7 +24,7 @@ from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Config
@@ -62,6 +63,19 @@ def _free_port(host: str) -> int:
         return s.getsockname()[1]
 
 
+def _viewer_version(viewer: Path) -> str:
+    """Short content hash of transport.js — the build the browser should run.
+
+    It's injected into the page (``window.__OV_VER__``) and used to version-stamp
+    the script URL, so a browser can never run a stale cached copy of the viewer
+    on the same URL.
+    """
+    try:
+        return hashlib.sha256((viewer / "transport.js").read_bytes()).hexdigest()[:10]
+    except OSError:
+        return "0000000000"
+
+
 def create_app(state: ServerState) -> FastAPI:
     """Build and return the FastAPI app, closing over ``state``."""
     app = FastAPI(
@@ -85,8 +99,11 @@ def create_app(state: ServerState) -> FastAPI:
     @app.middleware("http")
     async def _no_cache(request, call_next):
         response = await call_next(request)
-        response.headers["Cache-Control"] = "no-cache, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
+        # Only add a default if the route didn't already set one — this lets
+        # the index route keep its stronger "no-store" directive.
+        if "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
         return response
 
     # Static viewer assets (transport.js + vendored PDF.js).
@@ -97,8 +114,34 @@ def create_app(state: ServerState) -> FastAPI:
         log.warning("viewer directory not found at %s", viewer)
 
     @app.get("/", include_in_schema=False)
-    async def index() -> FileResponse:
-        return FileResponse(viewer / "index.html", media_type="text/html")
+    async def index() -> HTMLResponse:
+        """Serve the viewer HTML with a per-content version stamp.
+
+        We hash ``transport.js`` and load it as ``transport.js?v=<hash>``. The
+        version changes whenever the script's bytes change, so a browser can
+        never run a *stale cached* transport.js on the same URL — the URL the
+        browser requests is different and therefore uncached. The version is
+        also exposed as ``window.__OV_VER__`` so the status bar can show which
+        build is actually running. ``no-store`` keeps the HTML itself fresh.
+        """
+        html = (viewer / "index.html").read_text()
+        script = viewer / "transport.js"
+        try:
+            ver = hashlib.sha256(script.read_bytes()).hexdigest()[:10]
+        except OSError:
+            ver = "0000000000"
+        needle = '<script src="/viewer/transport.js"></script>'
+        replacement = (
+            f'<script>window.__OV_VER__="{ver}";</script>'
+            f'<script src="/viewer/transport.js?v={ver}"></script>'
+        )
+        if needle in html:
+            html = html.replace(needle, replacement)
+        log.info("serving viewer (transport.js v%s)", ver)
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        )
 
     @app.get("/pdf", include_in_schema=False)
     async def get_pdf() -> FileResponse:
@@ -118,11 +161,13 @@ def create_app(state: ServerState) -> FastAPI:
     return app
 
 
-def _open_when_ready(url: str, timeout: float = 15.0) -> None:
+def _open_when_ready(base: str, open_url: str, timeout: float = 15.0) -> None:
     """Open the browser from a daemon thread once /healthz answers.
 
-    Polling avoids the race where the browser opens before uvicorn has bound
-    the port. Never blocks the main thread / event loop.
+    ``base`` is the URL used to poll ``/healthz``; ``open_url`` is what we hand
+    to the browser (carries a ``?v=`` token so the browser fetches a fresh page
+    instead of a disk-cached one). Polling avoids the race where the browser
+    opens before uvicorn has bound the port. Never blocks the main thread / loop.
     """
     import urllib.request
 
@@ -130,30 +175,33 @@ def _open_when_ready(url: str, timeout: float = 15.0) -> None:
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                with urllib.request.urlopen(url + "healthz", timeout=1) as r:
+                with urllib.request.urlopen(base + "healthz", timeout=1) as r:
                     if r.status == 200:
                         break
             except Exception:
                 time.sleep(0.2)
         try:
-            webbrowser.open(url)
+            webbrowser.open(open_url)
         except Exception as exc:  # pragma: no cover
             log.warning("could not open browser: %s", exc)
 
     threading.Thread(target=_go, daemon=True).start()
 
 
-def _print_banner(state: ServerState, url: str) -> None:
+def _print_banner(state: ServerState, open_url: str, version: str) -> None:
     config = state.config
     doc = state.document
     banner = [
         "",
         "  OwnVoiceReader  —  your model, your voice, your machine",
         f"  document : {doc.title if doc else '(none — open one in the viewer)'}",
-        f"  serving  : {url}",
+        f"  serving  : {open_url}",
+        f"  viewer   : transport.js v{version}",
         "  local-only: " + ("yes" if config.local_only else "no"),
         "  press Ctrl-C to stop",
         "",
+        "  (open the URL above — its ?v= token forces a fresh page so the",
+        "   browser can't run a stale cached script)",
     ]
     print("\n".join(banner), flush=True)
 
@@ -259,10 +307,15 @@ def start(config: Config) -> int:
     atexit.register(_cleanup)
 
     url = f"http://{host}:{port}/"
-    _print_banner(state, url)
+    # A versioned open-URL (?v=<hash>) gives the browser a URL it has never
+    # cached, so it fetches a fresh index.html + transport.js instead of a
+    # stale disk-cached copy — the surest way to dodge the 403 reconnect loop.
+    version = _viewer_version(VIEWER_DIR)
+    open_url = f"{url}?v={version}"
+    _print_banner(state, open_url, version)
 
     if config.open_browser:
-        _open_when_ready(url)
+        _open_when_ready(url, open_url)
 
     try:
         uvicorn.run(app, host=host, port=port, log_level="info")
