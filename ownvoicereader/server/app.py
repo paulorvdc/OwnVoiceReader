@@ -73,6 +73,21 @@ def create_app(state: ServerState) -> FastAPI:
     app.include_router(build_api_router(state))
     app.include_router(build_stream_router(state))
 
+    # Never let the browser run a stale viewer script. The app is a local,
+    # single-session tool, so we force revalidation on every request: the
+    # browser always checks (and gets a cheap 304 when a file is unchanged),
+    # but picks up a fresh copy the moment we edit transport.js / index.html.
+    # Without this, an in-development edit to the JS can be served from the
+    # browser's cache — the exact class of bug that produced a malformed
+    # `ws://…/ws//host/ws` URL from an old build. HTTP middleware does not
+    # wrap the WebSocket scope, so /ws is unaffected.
+    @app.middleware("http")
+    async def _no_cache(request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
     # Static viewer assets (transport.js + vendored PDF.js).
     viewer = VIEWER_DIR
     if viewer.is_dir():

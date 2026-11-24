@@ -293,6 +293,8 @@
       this.currentBBox = null;
       this.voice = null;
       this.onStatus = null;
+      this.reconnectAttempts = 0;
+      this._reconnectGaveUp = false;
     }
 
     connect() {
@@ -300,11 +302,26 @@
       this.ws = new WebSocket(proto + "//" + location.host + "/ws");
       this.ws.onmessage = (e) => this.onMessage(e);
       this.ws.onopen = () => {
+        this.reconnectAttempts = 0;
+        this._reconnectGaveUp = false;
         setStatus("connected — press ▶ to read the paper aloud", "ok");
       };
+      // A closed socket is common (a brief blip, or the user reloading the
+      // page after a server restart). Retry in place a few times with
+      // backoff instead of nuking the whole page — that previously produced an
+      // infinite reload loop. We give up after a handful of tries so a truly
+      // dead server surfaces an error the user can act on.
       this.ws.onclose = () => {
-        setStatus("connection closed — reloading…", "");
-        setTimeout(() => location.reload(), 800);
+        if (this._reconnectGaveUp) return;
+        this.reconnectAttempts = (this.reconnectAttempts || 0) + 1;
+        if (this.reconnectAttempts >= 5) {
+          this._reconnectGaveUp = true;
+          setStatus("connection lost — press ▶ or reload to retry", "err");
+          return;
+        }
+        const delay = 500 * this.reconnectAttempts;
+        setStatus(`connection closed — retrying in ${delay / 1000}s…`, "");
+        setTimeout(() => this.connect(), delay);
       };
       this.ws.onerror = () => setStatus("connection error", "err");
     }
