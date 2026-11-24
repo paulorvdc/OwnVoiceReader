@@ -100,15 +100,15 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > 📝 comment: DONE 2026-11-24. Package renamed `ownvoice`→`ownvoicereader` (exclusivity); conda env `ownvoicereader`; isolated pip config `.pip-ownvoicereader.conf` (bypasses broken NVIDIA index). **Primary flow = upload PDF in the UI** (drag-drop / picker → `POST /api/load` → renders). CLI `paper.pdf` arg kept only for convenience + headless `--auto`. `/pdf` is a top-level route with HTTP range support (206 + `accept-ranges`). Provider secrets shown in UI by name only (never value). Tests: `tests/test_pdf_source.py` (hermetic). PDF.js vendored offline.
 
 
-### M1 — Text reader  _status: [ ] not started_
-- [ ] `ingest/text_extractor.py` — text blocks + bboxes; flag sparse/empty pages
-- [ ] `ingest/reading_order.py` — merge blocks into one ordered sequence
-- [ ] `voice/tts_engine.py` — **espeak-ng first** (smoke test), then **Piper**
-- [ ] `voice/player.py` — stream audio to **browser** (HTML5 `<audio>`)
-- [ ] `server/stream.py` — WebSocket/SSE: position, transcript, events
-- [ ] `viewer/transport.js` — WS/SSE client + audio + control buttons
-- [ ] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
-> 📝 comment:
+### M1 — Text reader  _status: [x] done_
+- [x] `ingest/text_extractor.py` — text blocks + bboxes; flag sparse/empty pages
+- [x] `ingest/reading_order.py` — merge blocks into one ordered sequence (2-col L→R, then down)
+- [x] `voice/tts_engine.py` — **Piper** local engine (espeak-ng pivot; see note) + espeak fallback
+- [x] `voice/player.py` — stream audio to **browser** (HTML5 `<audio>`); null/system for headless
+- [x] `server/stream.py` — WebSocket: position, transcript, events, controls
+- [x] `viewer/transport.js` — WS client + audio queue + highlight + transcript + controls
+- [x] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
+> 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. Awaiting user audio smoke test._
 
 ### M2 — Figures & tables  _status: [ ] not started_
 - [ ] `ingest/figure_table.py` — pdfplumber (tables) + image crops (figures)
@@ -237,6 +237,7 @@ Ollama + local TTS/OCR.
 - [x] §1.3 open questions answered
 - [x] Sample paper chosen (§1.3): `test_pdfs/3799682.3840189.pdf` (FranKGraphBench, 6pp, 4-col)
 - [x] M0 complete — viewer + server + UI upload (2026-11-24)
-- [ ] Ready to start **M1** (text reader: extract → reading order → Piper TTS → streamed audio → controls)
+- [x] M1 complete — text reader: 2-col extract → reading order → Piper TTS → streamed WAV audio → pause/resume/stop/skip/replay (2026-11-24)
+- [ ] Ready to start **M2** (figures & tables + LLM explainer + first-reference `EXPLAIN` timeline)
 
-> 📝 comment: _M0 DONE. Next: M1 text reader. A6 (live model/voice/style in UI), A9 (media-style forward/rollback controls), A10 (LLM section-detect fallback) noted for M1/M4/M5._
+> 📝 comment: _M1 DONE, awaiting user audio smoke test. espeak-ng→Piper pivot (see M1 note). A6 (live model/voice/style in UI) — voice+style selects done in M1; LLM model select is M4. A9 (media-style forward/rollback controls) done in M1. A10 (LLM section-detect fallback) deferred to M2/M4._

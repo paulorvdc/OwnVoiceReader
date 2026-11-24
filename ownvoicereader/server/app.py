@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import Config
 from ..model import ReadingDocument
-from .api import build_api_router, load_document_by_path
+from .api import build_api_router, load_document_by_path, get_tts_engine
 from .stream import build_stream_router
 
 log = logging.getLogger("ownvoicereader.server")
@@ -47,6 +47,9 @@ class ServerState:
     temp_dir: Optional[Path] = None
     started_at: float = field(default_factory=time.time)
     load_error: Optional[str] = None
+    # Shared local TTS engine (built lazily, cached).
+    tts: object = None
+    _tts_tried: bool = False
 
 
 def _free_port(host: str) -> int:
@@ -139,15 +142,61 @@ def _print_banner(state: ServerState, url: str) -> None:
     print("\n".join(banner), flush=True)
 
 
-def start(config: Config) -> int:
-    """Entry point used by the CLI: build state, serve, return the port.
+def _run_headless(config: Config) -> int:
+    """Read a PDF to completion without a browser (``--auto`` / CI, A12).
 
-    Blocks until the process is interrupted (Ctrl-C). Uses uvicorn.run so the
-    lifecycle (startup + signal handling) is handled by uvicorn itself, which
-    is the version-robust way to run the server programmatically.
+    Builds the document, runs the orchestrator to the end through a system audio
+    player, and prints a short transcript + summary to stdout. Returns the
+    number of cues spoken.
+    """
+    from .api import load_document_by_path
+    from ..reader.orchestrator import Orchestrator
+    from ..voice import build_player
+
+    if not config.pdf_path:
+        print("ownvoicereader --auto needs a PDF path (no UI in headless mode)",
+              file=__import__("sys").stderr)
+        return 1
+
+    state = ServerState(config=config, pdf_path=config.pdf_path)
+    load_document_by_path(state, config.pdf_path)
+    if state.document is None:
+        print(f"could not load PDF: {state.load_error}", file=__import__("sys").stderr)
+        return 1
+
+    doc = state.document
+    tts = get_tts_engine(state)
+    player = build_player(config)
+    orch = Orchestrator(doc, tts, config)
+    log.info("headless read: %d cue(s), engine=%s, style=%s",
+             orch.n, tts.name if tts else "none",
+             (config.style or "academic-calm"))
+
+    spoken = 0
+    import asyncio
+    try:
+        spoken = asyncio.run(orch.run_to_end(player))
+    except KeyboardInterrupt:
+        log.info("interrupted")
+
+    print(
+        f"\nread {spoken}/{orch.n} cue(s) of '{doc.title}' "
+        f"({doc.page_count} pages, engine={tts.name if tts else 'none'})"
+    )
+    return spoken
+
+
+def start(config: Config) -> int:
+    """Entry point used by the CLI.
+
+    * ``--auto`` reads the PDF to completion headlessly (A12) and returns.
+    * otherwise it serves the browser viewer on 127.0.0.1:<port>.
     """
     import atexit
     import shutil
+
+    if config.auto:
+        return _run_headless(config)
 
     host = config.host
     port = config.port if config.port else _free_port(host)

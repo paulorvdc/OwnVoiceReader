@@ -17,33 +17,43 @@ open a PDF directly — that path exists for headless / CI use
 
 ## Status
 
-This is **Milestone M0 — Skeleton: viewer + server**. It is the first
-testable milestone. What works today:
+This is at **Milestone M1 — Text reader** (built 2026-11-24, awaiting your
+audio smoke test). What works today:
 
 - ✅ `ownvoicereader` starts a local server (127.0.0.1, random high port) and
   opens your browser to a clean viewer.
 - ✅ **Upload a PDF in the UI** — drag-drop onto the landing page or use the
   "Open a PDF…" button. The PDF is served back to the browser over HTTP.
 - ✅ **PDF.js** renders the document (page navigation, zoom, fit-width, keyboard).
-- ✅ `ownvoicereader paper.pdf` pre-loads a PDF (for headless/CI / convenience).
+- ✅ **Reads the paper aloud** in a local voice (Piper), reading the
+  **2-column layout in the right order** (left column fully, then the right),
+  with a follow-along highlight, a "now reading" bar, and a live transcript.
+- ✅ **Voice controls** — play / pause / resume / **stop / skip / replay**
+  (media-style), and live **voice + style** switching (4 styles:
+  *academic-calm, quick-scan, narrative, lecture*).
+- ✅ **Headless read** — `ownvoicereader paper.pdf --auto --no-browser` speaks
+  the whole paper to a system or null player (no browser needed).
 - ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`) + a PDF byte endpoint
-  (`/pdf`, with HTTP range support for large files).
+  (`/pdf`, with HTTP range support for large files) + a `/ws` transport for
+  events + audio.
 - ✅ Server hygiene (A13): binds `127.0.0.1` only, random port, local-only by
   default. Provider secrets are read from the OS environment **by name only**
   (never printed, never written to disk) — see *Security*.
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🔜 **M1** text reader: extract blocks, reading order, TTS (Piper), streamed
-  audio to the browser, play / pause / stop / skip / replay.
 - 🔜 **M2** figures & tables: pdfplumber tables, figure crops, LLM explanations
   at the *first textual reference* (`Fig. 3` / `Table 2(b)`).
 - 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
-- 🔜 **M4** config layering + live switching of model / voice / style.
+- 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
-- 🔜 **M6** hardening: graceful LLM-down, resume checkpoint, tests.
+- 🔜 **M6** hardening: graceful LLM-down, resume checkpoint, more tests.
 
-The reader control bar (play/pause/…) is visible but **disabled** until M1.
+> **Voice engine:** M1 uses **Piper** as the local voice
+> (`en_US-lessac-medium`, 22050 Hz). espeak-ng was the plan's first choice but
+> could not be provisioned on this machine (see `BUILD_PLAN.md` M1 note); the
+> `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears.
+> Piper is the **only** cloud-free TTS in core — no cloud TTS is used.
 
 ---
 
@@ -84,6 +94,30 @@ The vendored PDF.js build already ships in
 `ownvoicereader/viewer/vendor/pdfjs/` (downloaded at setup), so the app works
 **offline / local-only** with no network at runtime.
 
+### 4. Voice (Piper) — needed for M1 TTS
+
+TTS is powered by **Piper**, a local neural TTS engine (no cloud, no API key).
+The `piper-tts` wheel provides the `piper` binary; a voice model (~63 MB) is
+downloaded on first use into `~/.cache/ownvoicereader/voices/` (override with
+`OWNVOICEREADER_VOICE_DIR`):
+
+```bash
+pip install "piper-tts"          # provides the piper binary
+# first run downloads en_US-lessac-medium automatically
+# …or fetch it yourself:
+#   curl -L -o ~/.cache/ownvoicereader/voices/en_US-lessac-medium.onnx \
+#     https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+```
+
+Point the app at a different Piper binary or voice dir with
+`OWNVOICEREADER_PIPER_BIN` / `OWNVOICEREADER_VOICE_DIR`. If no Piper binary or
+voice is present, the app still runs — it just reports the voice as
+*unavailable* in the UI and skips TTS (headless `--auto` will read with a
+`null` player and produce no sound).
+
+> Audio output for the **headless** path uses **`aplay`** (ALSA) when
+> `--playback system`; a missing audio device is handled gracefully.
+
 ---
 
 ## Run
@@ -95,8 +129,11 @@ ownvoicereader
 # Open a specific PDF directly (convenience / headless)
 ownvoicereader path/to/paper.pdf
 
-# No browser (headless / CI); reads to completion once M1 lands
+# No browser (headless / CI); reads the paper to completion
 ownvoicereader path/to/paper.pdf --auto --no-browser
+
+# Headless with the system audio device instead of the browser
+ownvoicereader path/to/paper.pdf --auto --no-browser --playback system
 
 # Pin the port instead of a random high one
 ownvoicereader --port 8000
@@ -118,23 +155,39 @@ browser opens automatically; press **Ctrl-C** to stop.
 
 ---
 
-## How it works (M0)
+## How it works (M1)
 
 ```
 ownvoicereader/            # the Python package
-├─ ingest/pdf_source.py     # open PDF → page count + metadata (M0)
+├─ ingest/
+│  ├─ pdf_source.py        # open PDF → page count + metadata (M0)
+│  ├─ text_extractor.py    # lines + bboxes; flag sparse/empty pages (M1)
+│  └─ reading_order.py     # 2-col L→R, then down; merge → blocks (M1)
 ├─ model.py                # Block / ReadingDocument / Reference / ReadingEvent
 ├─ config.py               # defaults → env (OWNVOICEREADER_*) → CLI flags
+├─ voice/
+│  ├─ styles.py            # 4 presets: academic-calm / quick-scan / …
+│  ├─ tts_engine.py        # Piper (local) + espeak-ng fallback, WAV wrap
+│  └─ player.py            # system (aplay) / null / browser players
+├─ reader/
+│  └─ orchestrator.py      # cues; pause/resume/stop/skip/replay (M1)
 ├─ server/
 │  ├─ app.py               # FastAPI app + server runner (127.0.0.1, random port)
-│  ├─ api.py               # /api/info, /api/load, /api/unload
-│  └─ stream.py            # /ws transport (M1: events + audio)
+│  ├─ api.py               # /api/info, /api/load, /api/unload (+ voice info)
+│  └─ stream.py            # /ws transport: events + audio + controls (M1)
 ├─ viewer/
-│  ├─ index.html           # landing + PDF.js render + control bar
-│  ├─ transport.js         # API client, PDF.js render, upload, nav
+│  ├─ index.html           # landing + PDF.js + control bar + transcript
+│  ├─ transport.js         # WS client + audio queue + highlight + controls
 │  └─ vendor/pdfjs/        # vendored PDF.js (offline)
 └─ cli.py                  # the `ownvoicereader` entry point
 ```
+
+At load time the ingest layer turns the PDF into an ordered list of `Block`s
+(2-column reading order, page numbers / running headers filtered out). The
+reader turns those into short **cues** (~200 chars), and Piper synthesises each
+cue into a 16-bit mono **WAV** streamed to the browser over one binary WS frame.
+The browser pulls the next cue with a 1-cue lookahead, so **pause/stop are
+instant** and the highlight + transcript follow along.
 
 The **unified `Block`** shape (see `BUILD_PLAN.md` §4) is the contract that
 lets text and OCR feed the *same* reader pipeline later:
@@ -160,7 +213,7 @@ Block(kind: Text|Figure|Table, source: text|ocr, text, image,
 
 ---
 
-## Configuration (M0)
+## Configuration (M1)
 
 Config layers are **defaults → environment → CLI flags** (the YAML layer
 `~/.ownvoicereader/config.yaml` arrives in M4).
@@ -171,11 +224,14 @@ Environment variables (prefix `OWNVOICEREADER_`):
 |---|---|---|
 | `OWNVOICEREADER_HOST` | `127.0.0.1` | bind host |
 | `OWNVOICEREADER_PORT` | *(random)* | bind port |
-| `OWNVOICEREADER_PLAYBACK` | `browser` | `browser` (HTML5) or `system` |
+| `OWNVOICEREADER_PLAYBACK` | `browser` | `browser` (HTML5) / `system` (aplay) / `null` |
 | `OWNVOICEREADER_LOCAL_ONLY` | `true` | forbid cloud egress |
-| `OWNVOICEREADER_LLM_MODEL` | — | e.g. `ollama/qwen3:8b` |
-| `OWNVOICEREADER_VOICE` | — | TTS voice id |
-| `OWNVOICEREADER_STYLE` | — | `academic-calm` / `quick-scan` / `narrative` / `lecture` |
+| `OWNVOICEREADER_LLM_MODEL` | — | e.g. `ollama/qwen3:8b` (used from M2) |
+| `OWNVOICEREADER_VOICE` | `en_US-lessac-medium` | Piper voice id |
+| `OWNVOICEREADER_STYLE` | `academic-calm` | TTS style preset |
+| `OWNVOICEREADER_VOICE_DIR` | `~/.cache/ownvoicereader/voices` | Piper voice dir |
+| `OWNVOICEREADER_PIPER_BIN` | auto (env `piper`) | override Piper binary path |
+| `OWNVOICEREADER_ESPEAK_BIN` | auto | override espeak-ng binary path |
 
 ---
 
@@ -183,8 +239,13 @@ Environment variables (prefix `OWNVOICEREADER_`):
 
 ```bash
 pip install -e ".[test]"
-pytest            # hermetic: generates its own PDF fixture
+pytest            # hermetic: generates its own PDF fixtures
 ```
+
+M1 adds `tests/test_reading_order.py` (2-column ordering, gutter detection,
+page-number / stray-line filtering, a generated 2-column PyMuPDF PDF) and
+`tests/test_voice.py` (WAV wrapping + style presets; a Piper smoke test that
+skips cleanly when no engine is present).
 
 ---
 

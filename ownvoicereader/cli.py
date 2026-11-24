@@ -37,8 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--local-only", action="store_true",
                    help="forbid any cloud egress (this is the default)")
     p.add_argument("--no-cloud", action="store_true", help="alias of --local-only")
-    p.add_argument("--playback", choices=["browser", "system"], default=None,
-                   help="where audio plays: 'browser' (HTML5, default) or 'system' (headless/OS)")
+    p.add_argument("--playback", choices=["browser", "system", "null"], default=None,
+                   help="where audio plays: 'browser' (HTML5, default), "
+                        "'system' (headless OS audio), or 'null' (silent)")
     p.add_argument("--auto", action="store_true",
                    help="headless start-to-finish read (full effect in M1; for M0 just serves)")
     p.add_argument("--director", action="store_true",
