@@ -66,9 +66,38 @@ _LABEL_RE = re.compile(rf"^{_LABEL_BODY}", re.IGNORECASE)
 # trailing (?![a-zA-Z]) in _LABEL_BODY stops a number glued to a word).
 _MENTION_RE = re.compile(rf"(?<![\w.]){_LABEL_BODY}", re.IGNORECASE)
 
-# A block longer than this that opens with a label is a prose sentence that
-# happens to start with a reference, not a short caption title.
-_CAPTION_MAX_CHARS = 140
+# A caption is short. When a caption *line* was merged with the following body
+# paragraph (a common single-column layout artifact — the block opens with the
+# label but runs on into body prose), we bound the *stored* caption to its first
+# sentence group so the body never leaks in; the composer truncates again.
+_CAPTION_MAX_CHARS = 240
+# Split a merged caption+body text at sentence ends (". ", "! ", "? ") so we can
+# keep just the caption sentence(s) and drop the body that follows.
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _caption_prefix(text: str, max_len: int = _CAPTION_MAX_CHARS) -> str:
+    """Bound a possibly caption+body-merged text to a clean, short caption.
+
+    Academic captions are short, so a block that opens with a label but runs on
+    into body prose (a merged caption) is trimmed to its *first sentence* — or
+    two, when the first is a bare label like "Figure 2." — then cut at a word
+    boundary so a body sentence never leaks in. Short captions pass through
+    whole.
+    """
+    text = text.strip()
+    if len(text) <= max_len:
+        return text
+    parts = _SENT_SPLIT.split(text)
+    out = parts[0]
+    # "Figure 2." / "TABLE I" style: the first 'sentence' is a bare label, so
+    # pull in the next one, which holds the real caption text.
+    if len(out) <= 16 and len(parts) > 1:
+        out = " ".join(parts[:2])
+    if len(out) > max_len:
+        cut = out.rfind(" ", 0, max_len)
+        out = (out[:cut] if cut > 0 else out[:max_len]).rstrip() + "…"
+    return out
 
 
 def _normalize(kind_word: str, num: str, sub: str) -> tuple[BlockKind, str]:
@@ -129,12 +158,12 @@ def caption_target(block: Block) -> Optional[tuple[str, str]]:
     # ":" / "." right after the label is a caption separator; a following Capital
     # is a title-case caption. A lowercase char is a verb => prose, not a caption.
     is_caption = first in (":", ".") or first.isupper()
-    if not is_caption or len(text) > _CAPTION_MAX_CHARS:
+    if not is_caption:
         return None
 
     _kind, target = _normalize(m.group("kind"), m.group("num"), m.group("sub") or "")
     caption = rest[1:].lstrip() if first in (":", ".") else rest
-    return target, caption
+    return target, _caption_prefix(caption)
 
 
 # --------------------------------------------------------------------------- #

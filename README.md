@@ -43,8 +43,11 @@ audio smoke test). What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🔜 **M2** figures & tables: PyMuPDF tables, figure crops, LLM explanations
-  at the *first textual reference* (`Fig. 3` / `Table 2(b)`).
+- 🟡 **M2** figures & tables: **figure crops + table grids + the "right-moment"
+  explanation are in** — at each `Fig. 3` / `Table 2(b)`'s *first textual
+  reference* the reader now speaks a short **caption+context** summary (LLM-free,
+  A2 base). Grid summaries for tables (C3) and an optional **vision** enhancement
+  (`M2.5`, `lfm3-vl:2b` via the `ollama` library) are next.
 - 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
 - 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.

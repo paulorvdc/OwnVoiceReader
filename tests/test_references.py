@@ -127,6 +127,69 @@ def test_caption_rejects_bare_label():
 
 
 # --------------------------------------------------------------------------- #
+# caption_target on a *merged* caption+body block (M2 C2)
+#
+# A common single-column layout artifact merges a caption line with the following
+# body paragraph into one long block that opens with the label. C2 makes
+# caption_target detect it and trim it to the caption sentence(s) so the body
+# never leaks into the stored caption.
+# --------------------------------------------------------------------------- #
+def test_caption_detects_long_merged_block():
+    # "Fig. 1: <caption>. <body …>" — a long merged caption+body block must be
+    # detected (not rejected) and trimmed to the caption sentence, so the body
+    # that follows does not leak into the stored caption.
+    block = B(
+        "Fig. 1: Illustration of three runs evaluated on two queries that "
+        "yield MRR but with substantial differences in predictions. "
+        "Run 1 and Run 2 predict the ground-truth entities differently but "
+        "still predict largely the same answers across all five folds of the "
+        "evaluation, which is why we report both numbers side by side here."
+    )
+    got = caption_target(block)
+    assert got is not None, "a long merged caption must still be detected"
+    target, cap = got
+    assert target == "fig:1"
+    # The caption sentence is kept; the body sentence is dropped.
+    assert cap.startswith("Illustration of three runs")
+    assert "Run 1 and Run 2" not in cap, "body must not leak into the caption"
+
+
+def test_caption_short_passes_through_whole():
+    # A short caption is returned in full, untouched.
+    target, cap = caption_target(B("Table 1: Dataset statistics."))
+    assert target == "table:1"
+    assert cap == "Dataset statistics."
+
+
+def test_caption_trimmed_at_sentence_boundary():
+    # A caption that runs into several body sentences is cut after the caption,
+    # ending at a sentence boundary (not mid-word).
+    block = B(
+        "Figure 1: FranKGraphBench architecture illustration. "
+        "Data integration and recommendation. "
+        "Then a long run of body prose that should not appear at all in this "
+        "caption, extending well beyond the maximum length we allow for a spoken "
+        "explanation so that the trim is forced to kick in and drop the rest."
+    )
+    _, cap = caption_target(block)
+    assert cap.startswith("FranKGraphBench architecture illustration")
+    # Cut at a sentence end; the deep body sentence is gone.
+    assert "run of body prose" not in cap
+
+
+def test_caption_abbreviations_do_not_split_early():
+    # A lone-letter abbreviation ("e.g.") followed by a Capital must not be read
+    # as a sentence break that truncates the caption.
+    block = B(
+        "Table 2: Performance of methods, e.g. X, on the benchmark, "
+        "showing the improvement over baselines."
+    )
+    _, cap = caption_target(block)
+    assert "e.g." in cap  # the abbreviation is inside the kept caption
+    assert cap.endswith("baselines.")
+
+
+# --------------------------------------------------------------------------- #
 # build_index — one entry per figure/table, first ref = the EXPLAIN moment
 # --------------------------------------------------------------------------- #
 def test_build_index_caption_and_prose_ref():

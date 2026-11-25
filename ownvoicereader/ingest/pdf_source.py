@@ -84,6 +84,15 @@ class PdfSource:
     def page_count(self) -> int:
         return int(self._doc.page_count)
 
+    @property
+    def doc(self):
+        """The underlying opened PyMuPDF document (the live handle).
+
+        Higher ingest steps (figures/tables in M2 C2, OCR in M3) that need the
+        raw handle use this accessor rather than reaching into ``_doc``.
+        """
+        return self._doc
+
     def metadata(self) -> DocumentMetadata:
         return _metadata_from_doc(self._doc)
 

@@ -241,9 +241,9 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > closed.** Moving to M2 (figures/tables). Hard-refresh `Ctrl+Shift+R` to pick up the JS change
 > when you next open the reader._
 
-### M2 — Figures & tables  _status: [~] in progress_
-- [~] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables) + `get_pixmap(clip=…)` (figures); clean caption+body blocks
-- [x] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b) / Tbl. 2 / TABLE I`; build reference index
+### M2 — Figures & tables  _status: [~] C1 + C4 + C2 done · C3 (grid summary) + M2.5 (vision) next_
+- [x] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables→grid+bbox) + `get_pixmap(clip=…)` (figures→PNG+bbox); de-dup + min-size; append FIGURE/TABLE blocks
+- [x] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b) / Tbl. 2 / TABLE I`; build reference index; **`caption_target` now trims a merged caption+body block to its caption sentence(s)** (C2)
 - [x] `reader/timeline.py` — **"right-moment"** engine (A7): fire an `EXPLAIN` at each figure/table's *first prose reference*; caption+context composer (A2 base, LLM-free)
 - [x] orchestrator emits + speaks `EXPLAIN` events (pending-queue, navigation-safe)
 - [ ] `llm/explainer.py` — table→**grid summary**; *spoken*, short, no LaTeX/markdown (figure vision is M2.5)
@@ -257,19 +257,30 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > caption exists, else the reference sentence; M2.5 layers vision on top. The
 > orchestrator emits the `EXPLAIN` as a **pending follow-on** (queued right after
 > the reference cue, *not* a new cue) so section/cue navigation is untouched.
-> **14 new tests in `tests/test_timeline.py` → 69 pass total.**
 >
-> _**C4 is listenable.** A headless read of the Springer sample over real Piper
-> (22050 Hz) fires 14 explanations, each **immediately after its reference cue** —
-> e.g. "…as shown in Figure 1, all runs exhibit the same MRR…" is followed by
-> "Figure 1 is referenced here: …". A concatenated ref+explain clip is at
-> `/tmp/opencode/explain_demo.wav`. **Pausing here for your listen.**_
+> _**C2 (figure/table extraction) is done (2026-11-25).** `ingest/figure_table.py`
+> (new) populates `doc.blocks` with **TABLE** blocks (a `find_tables()` cell grid +
+> bbox) and **FIGURE** blocks (a `get_pixmap(clip=Rect(bbox), dpi=150)` PNG + bbox),
+> de-duplicated by overlap and min-size-filtered so a page of icons isn't 23
+> "figures." It runs after `order_lines` in `build_document`; the spoken path is
+> untouched (cue-building and `build_index` skip non-text blocks). The caption gap
+> from C4 is **closed**: `caption_target` no longer rejects a caption merged with its
+> body — it trims the merged block to its first sentence(s) (so the body never leaks
+> into the stored caption), fixing the "…is referenced here:" fallback.
 >
-> _Known gap (→ C2): in 1-col PDFs the reading-order step merges a caption with its
-> table/figure body into one long block, so `caption_target`'s 140-char cap leaves
-> that caption blank and the explanation falls back to the *reference sentence*
-> (hence "…is referenced here: For example, in Figure 1, …"). C2's PyMuPDF
-> extraction (separated caption + body) resolves this.
+> _**Calibration (all 4 samples, real Piper listenable):** captions now detected on
+> every sample — **SBC 1→6/6, IEEE 5→9/10, Springer 0→3/15, ACM 0→2/4.** The spoken
+> EXPLAINs now use real captions, e.g. *"Figure 1, illustration of three runs
+> evaluated on two queries that yield the same MRR but with substantial differences
+> in predictions"* (was "…is referenced here: For example, in Figure 1, …").
+> **Known limitations (→ C3 / M2.5, not C2):** (a) a *table* caption still includes
+> the table's row text (the caption line is merged with the grid in the text layer),
+> so the spoken table caption is noisy — C3's grid summary replaces it with clean
+> column/row prose; (b) a few **captionless** entries (sub-panels like `fig:3a` that
+> inherit the parent's caption; and a "bare label on its own line" case, IEEE
+> `TABLE I`) fall back to the reference sentence — M2.5 vision can fill these.
+> **8 new hermetic tests in `tests/test_figure_table.py` + 4 in
+> `tests/test_references.py` → 81 pass total.**_
 >
 > _**Decision resolved:** vision is optional (M2.5); the A2 caption+context base
 > (option **b**) is shipped now — it's LLM-free, so the timing is testable without
@@ -277,6 +288,8 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 
 ### M2.5 — Vision LLM through ollama python library  _status: [ ] not started_
 - [ ] using `lfm3-vl:2b` as the default model add the optional vision description into the caption + context design whenever this or another config vision model is available on that machine. make sure
+- [ ] make sure the vlm can also explain meaning from tables
+- [ ] try and calculate vlm explanations in the background (when indexing) and serve them at the appropriate time
 - [ ] use client and then chat so that a different ollama server can be configured by the user
 - [x] update pyproject.toml without litellm and pdfplumber. also move piper-tts with the voice installation into the core dependencies. ollama should be in vision.
 > 📝 comment: _**pyproject done (2026-11-25):** dropped `litellm`/`httpx`/`pdfplumber`;
