@@ -34,12 +34,17 @@ listenable). What works today:
   *academic-calm, quick-scan, narrative, lecture*).
 - ✅ **Headless read** — `ownvoicereader paper.pdf --auto --no-browser` speaks
   the whole paper to a system or null player (no browser needed).
-- ✅ **Optional vision** (M2.5) — with a local vision model (the `[vision]`
-  extra + `ollama pull lfm3-vl:2b`) each figure and table gets a short spoken
-  description of *what it shows* / *what its data means*; **without one the
-  reader runs fully** and explains figures/tables from their **caption + context**
-  instead (the A2 base) — it never stops, never goes silent. A status badge in the
-  viewer shows the state. See *(Optional) Vision LLM* below.
+- ✅ **Figures & tables + optional vision** (M2 + M2.5) — at each `Fig. 3` /
+  `Table 2(b)`'s *first textual reference* the reader speaks a short
+  explanation. With a local vision model (`lfm3-vl:2b`, the `[vision]` extra) it
+  describes **what the figure shows** / **what the table's data means** — each
+  figure and each table gets its *own* description (a same-kind, 2-D proximity
+  link keeps a figure's pixels off a table). A **status badge** shows the state
+  (green = model reachable, red = "set up Ollama"); **without a vision model the
+  reader runs fully** and falls back to a clean **caption + context** summary
+  (A2 base) — it never stops, never goes silent. Vision is computed in the
+  background at load, so the read is never blocked. See *(Optional) Vision LLM*
+  below.
 - ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`) + a PDF byte endpoint
   (`/pdf`, with HTTP range support for large files) + a `/ws` transport for
   events + audio.
@@ -50,17 +55,6 @@ listenable). What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🟢 **M2 + M2.5** figures & tables + **vision**: at each `Fig. 3` / `Table 2(b)`'s
-  *first textual reference* the reader speaks a short explanation. With a local
-  vision model (`lfm3-vl:2b` via the `ollama` library, the `[vision]` extra) it
-  describes **what the figure shows** and **what the table's data means** — each
-  figure and each table gets its *own* description (a same-kind, 2-D proximity link
-  keeps a figure's pixels from being spoken at a table's reference). A **status
-  badge** in the viewer (green = model reachable, red = "set up Ollama") shows the
-  configured model; without one it falls back to a clean **caption+context** summary
-  (A2 base). Vision is computed in the background at load, so it's ready by the
-  reference and the read is never blocked. A text-only table grid summary (C3)
-  remains an optional extra.
 - 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
 - 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
