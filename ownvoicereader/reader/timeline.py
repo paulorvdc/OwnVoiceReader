@@ -82,15 +82,18 @@ def _sentence(text: str) -> str:
 
 
 # A vision model often opens with a redundant self-reference ("This figure shows…",
-# "It shows…", "This image depicts…") that reads awkwardly after our own label
-# ("Figure 3, this image shows…"). We strip just that lead-in so "Figure 3,
+# "The table lists…", "It shows…") that reads awkwardly after our own label
+# ("Table 1, the table lists…"). We strip just that lead-in so "Table 1,
 # <description>" flows. Two shapes: "<determiner> <visual-noun> <verb>" and a bare
-# "<pronoun> <verb>".
+# "<pronoun> <verb>". The verb set covers the openings these models actually use.
+_VISION_VERBS = (
+    r"shows?|depicts?|illustrates?|presents?|contains?|compares?|is|gives?|provides?|"
+    r"displays?|lists?|reports?|includes?|holds?|covers?|summar(?:es|ises)?"
+)
 _VISION_LEAD = re.compile(
     r"^(?:"
-    r"(?:this|that|the|a|an)\s+(?:figure|fig\.?|table|tbl\.?|image|picture|chart|graph|diagram|plot)\s+"
-    r"(?:shows?|depicts?|illustrates?|presents?|contains?|compares?|is|gives?|provides?|displays?)\s+|"
-    r"(?:it|this|that|the)\s+(?:shows?|depicts?|illustrates?|presents?|contains?|compares?|is|gives?|provides?|displays?)\s+"
+    rf"(?:this|that|the|a|an)\s+(?:figure|fig\.?|table|tbl\.?|image|picture|chart|graph|diagram|plot)\s+(?:{_VISION_VERBS})\s+|"
+    rf"(?:it|this|that|the)\s+(?:{_VISION_VERBS})\s+"
     r")",
     re.IGNORECASE,
 )

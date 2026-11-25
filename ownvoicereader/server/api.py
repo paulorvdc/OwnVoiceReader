@@ -157,16 +157,39 @@ def _voice_info(state) -> dict:
     }
 
 
-def _vision_info(state) -> dict:
-    """Report the configured vision model *without* probing the server (a probe is
-    the orchestrator's background job, not the page-load path). ``installed`` is
-    True when the ``[vision]`` extra is present so the reader can enhance
-    explanations; the live availability is resolved lazily by the orchestrator."""
+def _vision_info(state, *, probe: bool = False) -> dict:
+    """Report the vision model's status for the UI badge: which model is in use
+    and whether it is reachable *now*.
+
+    ``model`` is the **client's** final chosen id (``client.model`` — the
+    explicit ``--llm`` / ``OWNVOICEREADER_LLM_MODEL`` > default resolution the
+    client actually runs on), so the badge shows exactly the model the reader
+    will use. When vision is off the client is the ``NullLlmClient`` (no
+    ``model``), so we fall back to the *configured* model — that way the red
+    "set it up" badge still names the model to pull.
+
+    ``available`` reflects reachability: with ``probe`` the client's cache is
+    refreshed first, so starting Ollama and reloading turns the badge green; the
+    REST path stays cache-only (no probe per request). The probe is one cached
+    round-trip, shared with the orchestrator's background thread, so it never
+    blocks page load.
+    """
     from ..llm import resolve_model
 
     client = get_llm_client(state)
     installed = client is not None and getattr(client, "name", "null") != "null"
-    return {"installed": installed, "model": resolve_model(state.config)}
+    model = getattr(client, "model", None) or resolve_model(state.config)
+    if not installed:
+        return {"available": False, "installed": False, "model": model}
+    if probe:
+        refresh = getattr(client, "refresh", None)
+        if callable(refresh):
+            refresh()  # re-probe so "start Ollama later, reload" turns green
+    try:
+        available = bool(client.available)
+    except Exception:  # pragma: no cover - the property already guards itself
+        available = False
+    return {"available": available, "installed": True, "model": model}
 
 
 # --------------------------------------------------------------------------- #

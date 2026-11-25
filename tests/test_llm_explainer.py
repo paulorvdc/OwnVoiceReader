@@ -116,6 +116,37 @@ def test_link_media_keeps_first_media_per_target():
     assert media.get("table:1") is t1  # nearest caption wins; first kept
 
 
+def test_link_media_does_not_swap_figure_and_table_in_two_columns():
+    # The bug the listener caught: a left-column table and a right-column figure on
+    # the *same page* whose y-bands overlap. A y-only match hands the figure's
+    # pixels to table:1 (and vice versa). Same-kind + 2-D proximity must keep each
+    # media block on its *own* target so each gets its own description.
+    tab_cap = Block.text_block("Table 1: Availability per dataset.", 0,
+                               BBox(20, 540, 180, 560))          # left column
+    fig_cap = Block.text_block("Figure 1: Architecture.", 0,
+                               BBox(320, 650, 560, 670))          # right column
+    table = _table([["a", "b"], ["1", "2"]], page=0,
+                   bbox=BBox(20, 572, 180, 699))                  # left col, lower
+    fig = _fig(b"png", page=0, bbox=BBox(320, 485, 560, 616))     # right col, upper
+    blocks = [tab_cap, fig_cap, table, fig]
+    media = link_media(blocks)
+    # Each media block lands on its *own* target — no cross-kind mix.
+    assert media.get("table:1") is table
+    assert media.get("fig:1") is fig
+    assert media.get("table:1").kind is BlockKind.TABLE
+    assert media.get("fig:1").kind is BlockKind.FIGURE
+
+
+def test_link_media_figure_never_borrows_a_table_target():
+    # A figure on a page that has only a *table* caption (and no figure caption)
+    # must stay unlinked rather than stealing the table's target.
+    tab_cap = Block.text_block("Table 1: Results.", 0, BBox(20, 540, 180, 560))
+    fig = _fig(b"png", page=0, bbox=BBox(20, 300, 180, 500))
+    media = link_media([tab_cap, fig])
+    assert "fig:1" not in media
+    assert media.get("table:1") is None  # no table block on this page
+
+
 # --------------------------------------------------------------------------- #
 # _grid_text
 # --------------------------------------------------------------------------- #
@@ -171,6 +202,18 @@ def test_compose_vision_cleans_image_and_it_shows():
                      label_word="Figure", vision="It shows a prompt template.")
     assert compose_explanation(img) == "Figure 5, a network graph."
     assert compose_explanation(it) == "Figure 6, a prompt template."
+
+
+def test_compose_vision_strips_table_lists_lead():
+    # The VLM often opens a table answer "The table lists each model …"; after our
+    # "Table 1," prefix that reads "Table 1, the table lists …". "lists" is a
+    # stripped lead-in, so it becomes "Table 1, each model …".
+    item = ExplainItem(target="table:1", kind=BlockKind.TABLE, label="1",
+                       label_word="Table",
+                       vision="The table lists each model alongside its datasets.")
+    out = compose_explanation(item)
+    assert out == "Table 1, each model alongside its datasets."
+    assert "the table" not in out.lower()
 
 
 def test_compose_vision_does_not_overstrip_body():

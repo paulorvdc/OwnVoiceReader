@@ -46,10 +46,14 @@ What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 - 🟢 **M2 + M2.5** figures & tables + **vision**: at each `Fig. 3` / `Table 2(b)`'s
   *first textual reference* the reader speaks a short explanation. With a local
   vision model (`lfm3-vl:2b` via the `ollama` library, the `[vision]` extra) it
-  describes **what the figure shows** and **what the table's data means**; without
-  one it falls back to a clean **caption+context** summary (A2 base). Vision is
-  computed in the background at load, so it's ready by the reference and the read is
-  never blocked. A text-only table grid summary (C3) remains an optional extra.
+  describes **what the figure shows** and **what the table's data means** — each
+  figure and each table gets its *own* description (a same-kind, 2-D proximity link
+  keeps a figure's pixels from being spoken at a table's reference). A **status
+  badge** in the viewer (green = model reachable, red = "set up Ollama") shows the
+  configured model; without one it falls back to a clean **caption+context** summary
+  (A2 base). Vision is computed in the background at load, so it's ready by the
+  reference and the read is never blocked. A text-only table grid summary (C3)
+  remains an optional extra.
 - 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
 - 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
@@ -144,6 +148,15 @@ If no vision model is available, the app still runs and explains figures/tables
 from their **caption + context** instead (the A2 base) — no crash, no stall.
 The model is chosen via `--llm` / `OWNVOICEREADER_LLM_MODEL` and the server via
 `OLLAMA_HOST`, both read from the OS environment and **never persisted** (A6).
+
+**The viewer shows a status badge** (next to the Piper voice badge) so you always
+know the vision state: a **green** chip naming the model in use
+(`vision: lfm3-vl:2b`) when Ollama is reachable, or a **red** `vision: … · off`
+chip when it is not — the red one is your cue that you still need to start Ollama
+and/or pull the model. The badge is **read-only** (it reflects the *configured*
+model, `client.model`; there is no in-UI picker yet — that is M4), and it
+distinguishes "extra not installed" (`pip install ".[vision]"`) from
+"installed but the server is down".
 
 ---
 

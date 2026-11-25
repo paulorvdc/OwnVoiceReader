@@ -4,7 +4,7 @@ This is how the viewer hears the paper. One WebSocket per browser tab carries
 the whole reading:
 
 Server -> browser  (text JSON frames, then a binary WAV frame per cue)
-    {type:"hello",  doc, voice, cue_count}
+    {type:"hello",  doc, voice, vision, cue_count}
     {type:"event",  event:{ReadingEvent}}     # transcript + highlight/scroll
     {type:"audio",  cue_index, sample_rate, length}   # "a WAV frame follows"
     <BINARY>                                   # the WAV bytes for that cue
@@ -39,6 +39,7 @@ single HTML5 ``<audio>`` element can play them with instant pause/stop (A9).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -102,15 +103,23 @@ def build_stream_router(state) -> APIRouter:
         log.info("viewer connected over /ws")
         orch: Orchestrator | None = None
         try:
-            # Handshake: what document / voice / how many cues we have.
+            # Handshake: what document / voice / vision / how many cues we have.
             orch = _make_orchestrator(state)
             tts = get_tts_engine(state)
-            from .api import _voice_info
+            from .api import _voice_info, _vision_info
+
+            # The vision badge is *probed* (a fresh reachability check, run in a
+            # thread so the event loop never blocks on a slow/absent Ollama); the
+            # REST path stays cache-only. One cached round-trip, shared with the
+            # orchestrator's background thread.
+            vision = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: _vision_info(state, probe=True))
 
             await websocket.send_json({
                 "type": "hello",
                 "doc": state.document.to_dict() if state.document else None,
                 "voice": _voice_info(state),
+                "vision": vision,
                 "cue_count": orch.n,
                 "state": orch.status(),
             })

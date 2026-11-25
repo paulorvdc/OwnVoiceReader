@@ -241,7 +241,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > closed.** Moving to M2 (figures/tables). Hard-refresh `Ctrl+Shift+R` to pick up the JS change
 > when you next open the reader._
 
-### M2 — Figures & tables  _status: [~] C1 + C4 + C2 + M2.5 (vision) done · C3 (text-only grid summary) optional_
+### M2 — Figures & tables  _status: [~] C1 + C4 + C2 + M2.5 (vision + status badge) done · C3 optional_
 - [x] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables→grid+bbox) + `get_pixmap(clip=…)` (figures→PNG+bbox); de-dup + min-size; append FIGURE/TABLE blocks; `render_region` (M2.5)
 - [x] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b) / Tbl. 2 / TABLE I`; build reference index; **`caption_target` now trims a merged caption+body block to its caption sentence(s)** (C2)
 - [x] `reader/timeline.py` — **"right-moment"** engine (A7): fire an `EXPLAIN` at each figure/table's *first prose reference*; composer prefers a **vision** phrase, else the A2 caption+context base
@@ -311,22 +311,37 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 >   import is *lazy*, so a core install (no `[vision]`) still imports the module.
 > * **Explainer (vision for figures + meaning for tables).** `llm/explainer.py`:
 >   `link_media(blocks)` pairs each figure/table **block** (its pixels / grid) with
->   its caption's target by same-page proximity (the C2-deferred "type-aware matching",
->   done now because *vision* needs the pixels; cross-page floats stay unlinked → A2
->   fallback). `Explainer.describe` sends the **figure image** to the VLM; for a
->   **table** it sends the *rendered region* **and** the cell grid as text, so the
->   model explains the table's *meaning*. `Explainer.precompute` fills every scheduled
->   `ExplainItem.vision` (recomposing `item.text` via `compose_explanation`, which now
->   **prefers the vision phrase over the A2 caption**).
+>   its caption's target — the C2-deferred "type-aware matching", done now because
+>   *vision* needs the pixels. It now enforces two invariants so **each figure and
+>   each table gets its own description** (a listener caught a figure's pixels being
+>   spoken at a table's reference on the ACM sample): (1) **same kind** — a FIGURE
+>   block only ever matches a `fig:` caption and a TABLE block a `table:` one, so a
+>   figure can never borrow a table's target; and (2) **2-D proximity** — the nearest
+>   caption is chosen by *x + y* distance, not y alone (a y-only match swapped a
+>   left-column table with a right-column figure that shared a y-band). Cross-page
+>   floats / captionless stay unlinked → A2 fallback. `Explainer.describe` sends the
+>   **figure image** to the VLM; for a **table** it sends the *rendered region*
+>   **and** the cell grid as text, so the model explains the table's *meaning*.
+>   `Explainer.precompute` fills every scheduled `ExplainItem.vision` (recomposing
+>   `item.text` via `compose_explanation`, which now **prefers the vision phrase
+>   over the A2 caption**).
 > * **Background, serve-at-the-moment (A7).** The orchestrator starts a **daemon
 >   thread** at load time that runs `precompute` for the whole paper, so by the time
 >   the reader reaches a reference the description is usually ready; if not (vision
 >   off / slow / down) the A2 caption+context is spoken — the read is never silent or
 >   blocked. The vision phrase is tidied (`_clean_vision`) to drop a redundant
->   "this figure shows…" so "Figure 3, a pipeline of three stages…" flows.
-> * **Wiring.** `get_llm_client(state)` (cached, like `get_tts_engine`) feeds both the
->   web (`_make_orchestrator`) and headless (`_run_headless`) paths; `/api/info` now
->   reports `{installed, model}` so the UI can show vision status (M7).
+>   self-reference lead-in ("this figure shows…", "the table lists…") so "Figure 3,
+>   a pipeline of three stages…" / "Table 1, each graph-embedding model…" flow.
+> * **Wiring + the status badge.** `get_llm_client(state)` (cached, like
+>   `get_tts_engine`) feeds both the web (`_make_orchestrator`) and headless
+>   (`_run_headless`) paths. The **vision badge** (a read-only status chip, like the
+>   Piper voice badge) is driven by `_vision_info(state)` in the WS `hello`: it shows
+>   the **client's own final model** (`client.model` — the `--llm` / env / default
+>   resolution, *no UI picker*) **green when reachable**, **red "off" when not** so
+>   the user knows to start Ollama / pull the model. The hello *probes* reachability
+>   (in a thread, so the event loop never blocks on a slow/absent server); `/api/info`
+>   stays cache-only. `NullLlmClient` (no `[vision]` extra) → red "off" naming the
+>   model to install.
 >
 > * **Calibration (all 4 samples, real `lfm3-vl:2b` listenable):** vision now
 >   enhances the bulk of explanations — **SBC 4/6, IEEE 9/10, ACM 2/2, Springer 2/3**
@@ -338,7 +353,9 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 >   at `/tmp/opencode/m25_vision_demo.wav`.
 >
 > * **Tests:** 15 in `tests/test_llm_client.py` (hermetic + live-server, skipped
->   when no server) + 18 in `tests/test_llm_explainer.py` → **114 pass total.**
+>   when no server) + 23 in `tests/test_llm_explainer.py` (incl. the cross-column
+>   same-kind/2-D regression + the "table lists" lead-in strip) + 6 in
+>   `tests/test_server_api.py` (the badge payload) → **125 pass total.**
 >
 > _**Known limitations (→ later):** a captionless / cross-page-float figure stays on
 > the A2 base (its caption is clean, so the spoken text is still fine); the vision

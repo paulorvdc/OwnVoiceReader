@@ -27,6 +27,7 @@ orchestrator emits whatever ``item.text`` currently is at fire time.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 from ..model import Block, BlockKind, ReadingDocument
@@ -53,36 +54,56 @@ def link_media(blocks: list[Block]) -> dict[str, Block]:
     A caption *text* block already resolves a target (M2 C1/C2), but it does not
     carry the image. We pair each media block with the **nearest caption on its
     own page** (captions always sit beside their figure/table) and take that
-    caption's target. Figures whose caption is on a *different* page (a float) or
-    that have no caption at all simply are not linked — their explanation falls
-    back to the A2 base. This is the "type-aware matching" the plan defers from C2;
-    done here because *vision* (unlike the spoken base) needs the pixels.
+    caption's target. Two invariants keep a figure from borrowing a table's pixels
+    (or vice versa) — the bug that mixed a figure's description onto a table:
+
+      * **same kind.** A caption's target kind (`fig:` / `table:`) is fixed by its
+        label ("Figure 3" vs "Table 2"), so a FIGURE block only ever matches a
+        `fig:` caption and a TABLE block only a `table:` one. A figure can never be
+        keyed under a table's target.
+      * **2-D proximity.** The nearest caption is chosen by *x + y* distance, not y
+        alone. A caption sits in the *same column* as its media, so an x-mismatch
+        (a left-column table sharing a y-band with a right-column figure) must not
+        win — y-only distance swapped them.
+
+    Figures/tables whose caption is on a *different* page (a float) or that have
+    none at all simply are not linked — their explanation falls back to the A2
+    base. This is the "type-aware matching" the plan defers from C2; done here
+    because *vision* (unlike the spoken base) needs the pixels.
     """
-    # Caption text blocks on each page: (page, y-center, target).
-    captions: list[tuple[int, float, str]] = []
+    # Caption text blocks on each page: (page, x-center, y-center, target, kind).
+    captions: list[tuple[int, float, float, str, BlockKind]] = []
     for b in blocks:
         if b.kind is not BlockKind.TEXT or b.bbox is None:
             continue
         ct = caption_target(b)
         if ct is not None:
             target, _ = ct
+            cx = (b.bbox.x0 + b.bbox.x1) / 2.0
             cy = (b.bbox.y0 + b.bbox.y1) / 2.0
-            captions.append((b.page, cy, target))
+            captions.append((b.page, cx, cy, target, _kind_of(target)))
 
     media_by_target: dict[str, Block] = {}
     for b in blocks:
         if b.kind not in (BlockKind.FIGURE, BlockKind.TABLE) or b.bbox is None:
             continue
-        same_page = [c for c in captions if c[0] == b.page]
-        if not same_page:
+        # Same page *and* same kind: a figure only ever matches a figure caption.
+        same_kind = [c for c in captions if c[0] == b.page and c[4] is b.kind]
+        if not same_kind:
             continue
+        cx = (b.bbox.x0 + b.bbox.x1) / 2.0
         cy = (b.bbox.y0 + b.bbox.y1) / 2.0
-        nearest = min(same_page, key=lambda c: abs(c[1] - cy))
-        target = nearest[2]
+        nearest = min(same_kind, key=lambda c: math.hypot(c[1] - cx, c[2] - cy))
+        target = nearest[3]
         # Keep the first media block per target (the most prominent on the page).
         media_by_target.setdefault(target, b)
-        b.caption = b.caption or nearest[2]  # not used downstream; a tidy hint
+        b.caption = b.caption or target  # not used downstream; a tidy hint
     return media_by_target
+
+
+def _kind_of(target: str) -> BlockKind:
+    """'fig:3' -> FIGURE, 'table:2' -> TABLE (mirrors references._kind_of)."""
+    return BlockKind.FIGURE if target.startswith("fig:") else BlockKind.TABLE
 
 
 # --------------------------------------------------------------------------- #

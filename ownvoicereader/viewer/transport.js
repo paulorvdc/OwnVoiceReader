@@ -297,6 +297,7 @@
       this.currentPage = null;
       this.currentBBox = null;
       this.voice = null;
+      this.vision = null;
       this.onStatus = null;
       this.reconnectAttempts = 0;
       this._reconnectGaveUp = false;
@@ -375,7 +376,9 @@
     onHello(msg) {
       this.cueCount = msg.cue_count || 0;
       this.voice = msg.voice || { available: false };
+      this.vision = msg.vision || { available: false, installed: false, model: null };
       this.updateVoiceUI();
+      this.updateVisionUI();
       if (this.cueCount === 0) {
         this.enableControls(false);
         setStatus("no readable text found in this PDF", "err");
@@ -647,6 +650,34 @@
         el.docInfo.insertAdjacentHTML(
           "beforeend",
           ` <span class="badge voice" title="Local voice: ${this.voice.engine}">voice: ${this.voice.engine}</span>`);
+      }
+    }
+
+    // A read-only status badge for the vision LLM (M2.5): green + the model in
+    // use when it is reachable, red ("off") when it is not — so the user knows to
+    // start Ollama / pull the model. The model comes from the server's hello
+    // (`this.vision.model`), which is the *configured* client model; there is no
+    // picker (that is M4). Idempotent: clear any prior vision badge first so a
+    // reconnect does not stack duplicates.
+    updateVisionUI() {
+      el.docInfo.querySelectorAll(".badge.vision, .badge.vision-off")
+        .forEach((n) => n.remove());
+      const v = this.vision || { available: false, installed: false, model: null };
+      const model = v.model || "vision";
+      if (v.available) {
+        el.docInfo.insertAdjacentHTML(
+          "beforeend",
+          ` <span class="badge vision" title="Vision LLM ready: ${model} (local Ollama)">vision: ${model}</span>`);
+      } else if (v.installed) {
+        // Extra is present but the server/model is not reachable -> "set it up".
+        el.docInfo.insertAdjacentHTML(
+          "beforeend",
+          ` <span class="badge vision-off" title="Vision off — start Ollama and pull ${model} (set OLLAMA_HOST to point at another server)">vision: ${model} · off</span>`);
+      } else {
+        // The [vision] extra is not installed.
+        el.docInfo.insertAdjacentHTML(
+          "beforeend",
+          ' <span class="badge vision-off" title="Install the vision extra:  pip install &quot;ownvoicereader[vision]&quot;">vision: off</span>');
       }
     }
 
