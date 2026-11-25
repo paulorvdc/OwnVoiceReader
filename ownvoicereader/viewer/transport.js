@@ -43,6 +43,7 @@
     voiceSelect: $("voice-select"),
     nowReading: $("now-reading"),
     nowText: $("now-text"),
+    nowSection: $("now-section"),
     transcript: $("transcript"),
     transcriptToggle: $("transcript-toggle"),
     overlay: $("highlight-overlay"),
@@ -288,6 +289,7 @@
       this.waitingForCue = false;
       this.expectingAudio = false;
       this.audioMeta = null;
+      this._jumping = false;   // a section jump is in flight (hold stale cues)
       this.cueCount = 0;
       this.pos = 0;
       this.currentPage = null;
@@ -384,9 +386,18 @@
     }
 
     onEvent(ev) {
+      // Hold stale cues produced by a `continue` that was in flight *before* a
+      // section jump — the jump's `state` frame resyncs the counter + section.
+      if (this._jumping) return;
       // Transcript + "now reading" + follow-along highlight.
       this.addTranscript(ev.text, ev.type === "notice" ? "notice" : "");
       el.nowText.textContent = ev.text || "…";
+      // Live cue counter + "now reading" section chip (M1.5 checkpoint 2): the
+      // counter advances as each cue is spoken, not only on a pause.
+      if (ev.meta) {
+        if (ev.meta.index != null) this.setProgress(ev.meta.index + 1, this.cueCount);
+        if (ev.meta.section) this.updateSection(ev.meta.section);
+      }
       if (ev.page != null) {
         this.currentPage = ev.page;
         this.currentBBox = ev.meta && ev.meta.bbox ? ev.meta.bbox : null;
@@ -407,7 +418,7 @@
     }
 
     onBinary(data) {
-      if (!this.expectingAudio) return;
+      if (this._jumping || !this.expectingAudio) return;
       this.expectingAudio = false;
       const blob = new Blob([data], { type: "audio/wav" });
       const url = URL.createObjectURL(blob);
@@ -466,6 +477,27 @@
       if (s.voice) { this.voice.voice = s.voice; }
       if (s.style && el.styleSelect && el.styleSelect.value !== s.style) {
         el.styleSelect.value = s.style;
+      }
+      if (s.section) this.updateSection(s.section);
+      // A `next_section`/`prev_section` reply: the server moved the playhead and
+      // this `state` frame carries the new section + position. Resync the UI,
+      // then resume pulling cues from the new position (the section-start cue
+      // speaks its lead-in). Any stale cue still in flight is ignored because we
+      // set `_jumping` when the jump started.
+      if (this._jumping) {
+        this._jumping = false;
+        this.updateSection(s.section);
+        this.setProgress(s.pos, s.n);
+        if (s.n && s.pos >= s.n) {
+          this.onEnd();
+        } else {
+          this.playing = true;
+          el.btnPlay.textContent = "⏸";
+          this.send({ cmd: "resume" });
+          this.pump();
+          this.maybeFetchMore();
+        }
+        return;
       }
       // React to explicit state changes coming from the server.
       if (s.state === "stopped") {
@@ -564,6 +596,46 @@
     // `waitingForCue` is set when a `continue` goes out and cleared when its
     // audio (or end) arrives, in onBinary / onEnd.
 
+    // --- section-aware navigation (M1.5 checkpoint 2) -------------------
+    // The ⏭ / ⏮ buttons jump by *section* (server-side), because a cue is only
+    // ~200 chars and the user thinks in paper sections, not cues. A jump moves
+    // the server's playhead, which is the single source of truth; the reply is a
+    // `state` frame carrying the new section + position, which resyncs the
+    // counter + "now reading" chip (see onState's `_jumping` branch).
+    // `skip` / `replay` above remain available as lossless per-cue helpers.
+    _jumpSection(cmd) {
+      // Stop whatever is playing and clear the stale lookahead queue so a cue
+      // produced before the jump can't be re-heard. The server moves the
+      // playhead and replies with a `state` frame; we hold until it arrives.
+      if (this.current) { this.current.pause(); this.current = null; }
+      this.queue.length = 0;
+      this.waitingForCue = false;
+      this.expectingAudio = false;
+      this._jumping = true;
+      el.overlay.style.display = "none";
+      el.btnPlay.textContent = "⏸";
+      setStatus(
+        cmd === "next_section" ? "jumping to next section…" : "rolling back to section…", "");
+      this.send({ cmd });
+    }
+
+    nextSection() { this._jumpSection("next_section"); }
+    prevSection() { this._jumpSection("prev_section"); }
+
+    // Update the "now reading" section chip from a section object
+    // ({index, label, kind}). Front-matter kinds (title/abstract/…) show their
+    // label as-is; numbered sections get a "§ " prefix.
+    updateSection(sec) {
+      if (!el.nowSection) return;
+      if (!sec || sec.index == null || sec.index < 0) {
+        el.nowSection.textContent = "";
+        return;
+      }
+      const kind = sec.kind;
+      const prefix = (kind === "section" || kind === "subsection") ? "§ " : "";
+      el.nowSection.textContent = prefix + (sec.label || "");
+    }
+
     // --- UI wiring -----------------------------------------------------
     enableControls(enabled) {
       el.voiceControls.classList.toggle("disabled", !enabled);
@@ -632,6 +704,7 @@
     // Reset the transcript + "now reading" for the new document.
     el.transcript.innerHTML = "";
     el.nowText.textContent = "…";
+    if (el.nowSection) el.nowSection.textContent = "";
     el.overlay.style.display = "none";
     reader = new Reader();
     reader.connect();
@@ -649,8 +722,10 @@
     // Voice controls (wired once; they reference the current module-level `reader`).
     el.btnPlay.addEventListener("click", () => { if (reader) reader.togglePlay(); });
     el.btnStop.addEventListener("click", () => { if (reader) reader.stop(); });
-    el.btnNext.addEventListener("click", () => { if (reader) reader.skip(); });
-    el.btnReplay.addEventListener("click", () => { if (reader) reader.replay(); });
+    // Section-aware jumps (M1.5 checkpoint 2): ⏭ skips to the next section,
+    // ⏮ rolls back to the start of the current / previous section.
+    el.btnNext.addEventListener("click", () => { if (reader) reader.nextSection(); });
+    el.btnReplay.addEventListener("click", () => { if (reader) reader.prevSection(); });
     el.transcriptToggle.addEventListener("click", () => {
       const open = el.transcript.classList.toggle("open");
       el.transcriptToggle.textContent = open ? "transcript ▴" : "transcript ▾";

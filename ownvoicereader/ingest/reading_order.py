@@ -31,9 +31,9 @@ from .text_extractor import Line
 log = logging.getLogger("ownvoicereader.ingest.order")
 
 # Gutter detection tuning.
-_GUTTER_MIN_FRACTION = 0.02   # a gutter must be >= 2% of page width to count
+_GUTTER_MIN_FRACTION = 0.02  # a gutter must be >= 2% of page width to count
 _GUTTER_COVERAGE_FRACTION = 0.10  # a "gutter" bin holds <=10% of peak coverage
-_PROJ_BINS = 400             # vertical-projection resolution across the page width
+_PROJ_BINS = 400  # vertical-projection resolution across the page width
 # A new paragraph block starts when the vertical gap to the previous line exceeds
 # this multiple of the local line height.
 _PARAGRAPH_GAP_MULT = 1.6
@@ -45,6 +45,26 @@ _PARAGRAPH_GAP_ABS = 10.0
 _FULL_WIDTH_FRACTION = 0.55
 # A bare page number / marker: digits (and optional separators) only.
 _DIGITS_RE = re.compile(r"[\d\-\.]+")
+# M1.5 checkpoint 2: split blocks at *heading* boundaries so a section heading
+# (e.g. "1 Introduction") and the front matter (title / authors / abstract) don't
+# merge into the following body. Two triggers, in addition to the vertical gap:
+#   * a font-size change larger than this (a heading stands out by being bigger)
+#   * a line that *starts* a known front-matter / section marker
+_FONT_SPLIT_PT = 1.5
+# A line that opens a new section / front-matter unit: "Abstract.", "Keywords:",
+# "CCS Concepts", "References", "Acknowledgments", or a numbered section "1 …" /
+# "3.2 …" / "Appendix A …". (Numbered requires a following Capitalized word so a
+# body sentence like "10 experiments" is not mistaken for a heading.) The
+# front-matter keywords and the word "Appendix" are matched case-insensitively
+# (they start with capitals, e.g. "Abstract." / "Appendix A"), while the
+# numbered alternative's trailing letter stays capital-only.
+_MARKER_RE = re.compile(
+    r"^(?:"
+    r"(?i:abstract|keywords|ccs concept|reference|bibliography|acknowledg)"
+    r"|(?i:appendix)\s+[A-Z]\.?\b"
+    r"|\d+(?:\.\d+)*[.\s]+[A-Z]"
+    r")"
+)
 
 
 def _project(lines: list[Line], page_width: float) -> tuple[list[int], float, float]:
@@ -102,8 +122,9 @@ def _is_stray(text: str) -> bool:
     return False
 
 
-def _detect_columns(lines: list[Line], page_width: float, page_height: float
-                   ) -> list[tuple[float, float]]:
+def _detect_columns(
+    lines: list[Line], page_width: float, page_height: float
+) -> list[tuple[float, float]]:
     """Return column slots ``[(left, right), ...]`` for a page.
 
     Uses a *threshold* vertical projection over x of the body lines: a run of
@@ -142,7 +163,7 @@ def _detect_columns(lines: list[Line], page_width: float, page_height: float
     bin_w = page_width / _PROJ_BINS
     slots: list[tuple[float, float]] = []
     prev = 0.0
-    for (gs, ge) in gutters:
+    for gs, ge in gutters:
         left = prev
         right = gs * bin_w
         if right - left > 0:
@@ -184,8 +205,20 @@ def _merge_into_blocks(column_lines: list[Line]) -> list[Block]:
         y0 = min(ln.y0 for ln in cur_lines)
         x1 = max(ln.x1 for ln in cur_lines)
         y1 = max(ln.y1 for ln in cur_lines)
+        # Typographic signal for section detection (M1.5/M5): a heading is the
+        # most *prominent* line in the block (largest font), and "bold" is taken
+        # from the longest (main) line — a heading block is a single bold line, a
+        # body block has no bold line.
+        font_size = max(ln.font_size for ln in cur_lines)
+        main = max(cur_lines, key=lambda ln: len(ln.text))
         blocks.append(
-            Block.text_block(text, cur_lines[0].page, BBox(x0, y0, x1, y1))
+            Block.text_block(
+                text,
+                cur_lines[0].page,
+                BBox(x0, y0, x1, y1),
+                font_size=round(font_size, 2),
+                is_bold=main.is_bold,
+            )
         )
 
     for i, ln in enumerate(lines):
@@ -195,7 +228,13 @@ def _merge_into_blocks(column_lines: list[Line]) -> list[Block]:
             continue
         gap = ln.y0 - cur_lines[-1].y1
         threshold = max(_PARAGRAPH_GAP_ABS, _PARAGRAPH_GAP_MULT * cur_gap_ref)
-        if gap > threshold:
+        # A new block also starts at a *heading*: a notable font-size change (a
+        # heading stands out by being bigger) or a line that opens a section /
+        # front-matter unit ("Abstract.", "1 Introduction", …). This is what
+        # separates the front matter and section headings from the body.
+        font_break = abs(ln.font_size - cur_lines[-1].font_size) > _FONT_SPLIT_PT
+        marker = _MARKER_RE.match(ln.text.strip()) is not None
+        if gap > threshold or font_break or marker:
             flush()
             cur_lines = []
             cur_gap_ref = ln.height or _PARAGRAPH_GAP_ABS
@@ -234,6 +273,10 @@ def order_lines(
         for ci in sorted(by_col):
             ordered.extend(_merge_into_blocks(by_col[ci]))
 
-    log.info("reading order: %d line(s) -> %d block(s) over %d page(s)",
-             len(lines), len(ordered), page_count)
+    log.info(
+        "reading order: %d line(s) -> %d block(s) over %d page(s)",
+        len(lines),
+        len(ordered),
+        page_count,
+    )
     return ordered

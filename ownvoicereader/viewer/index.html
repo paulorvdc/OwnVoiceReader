@@ -120,6 +120,12 @@
       min-height: 30px; display: flex; align-items: center; gap: 10px;
     }
     #now-reading .label { color: var(--accent); font-weight: 600; white-space: nowrap; }
+    #now-reading .section {
+      flex: 0 0 auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      background: var(--accent-dim); color: var(--accent);
+      padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    }
+    #now-reading .section:empty { display: none; }
     #now-reading .text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Transcript panel */
@@ -187,10 +193,10 @@
 
     <div class="group voice-controls disabled" id="voice-controls"
          title="Reading controls — start/stop the paper being read aloud">
-      <button id="btn-replay" title="Replay last (↺)">⏮</button>
+      <button id="btn-replay" title="Roll back to this / previous section start">⏮</button>
       <button id="btn-play" title="Play / Pause (space)">▶</button>
       <button id="btn-stop" title="Stop / reset">⏹</button>
-      <button id="btn-next" title="Skip to next chunk">⏭</button>
+      <button id="btn-next" title="Skip to next section">⏭</button>
       <span class="progress" id="progress" title="reading position">–</span>
     </div>
 
@@ -203,6 +209,7 @@
   <!-- "Now reading" + transcript -->
   <div id="now-reading" class="hidden">
     <span class="label">NOW READING</span>
+    <span class="section" id="now-section" title="current section"></span>
     <span class="text" id="now-text">…</span>
     <button id="transcript-toggle" title="Toggle transcript">transcript ▾</button>
   </div>

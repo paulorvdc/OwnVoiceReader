@@ -18,9 +18,15 @@ Browser -> server  (text JSON frames)
     {cmd:"continue"} pull the *next* cue — the **sole** forward producer
     {cmd:"pause"}    pause playback (the browser also pauses its <audio>)
     {cmd:"stop"}     stop and reset to the start
+    {cmd:"next_section"} jump forward to the start of the next section
+    {cmd:"prev_section"} roll back to the start of the current/previous section
     (skip / replay are handled client-side in transport.js, losslessly)
     {cmd:"set_style", style} / {cmd:"set_voice", voice}   live switch (M4)
     {cmd:"status"}   request the current playback status
+
+    A `state` frame now also carries the current `section` ({index,label,kind,
+    cue_start,cue_end,announce}) so the viewer can update its "now reading"
+    indicator and its cue counter on a section jump.
 
 The :class:`Orchestrator` is created per connection over the shared document,
 so the playhead / playback state is independent per tab while the text (and the
@@ -138,6 +144,17 @@ def build_stream_router(state) -> APIRouter:
                     await websocket.send_json({"type": "state", **orch.status()})
                 elif cmd == "stop":
                     orch.stop()
+                    await websocket.send_json({"type": "state", **orch.status()})
+                elif cmd == "next_section":
+                    # M1.5 checkpoint 2: jump forward to the start of the next
+                    # section (announces its name on the next cue). The playhead
+                    # is moved server-side; the state frame carries the new
+                    # section so the viewer can resync its counter + indicator.
+                    orch.next_section()
+                    await websocket.send_json({"type": "state", **orch.status()})
+                elif cmd == "prev_section":
+                    # Roll back to the start of the current / previous section.
+                    orch.prev_section()
                     await websocket.send_json({"type": "state", **orch.status()})
                 # `skip` and `replay` are handled client-side in transport.js so they
                 # can be lossless and predictable: the client owns its lookahead

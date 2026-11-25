@@ -110,7 +110,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
 > 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. _Audio smoke test done (2026-11-24): it surfaced two defects — a **chunker sentence-drop** and **pause/skip** that skip or jump unpredictably — now fixed in **M1.5 Checkpoint 1** (20 tests, live read-through confirms the abstract sentence is spoken)._
 
-### M1.5 — Section-aware navigation + playback integrity  _status: [~] C1 done · C2 awaiting your listen_
+### M1.5 — Section-aware navigation + playback integrity  _status: [x] C1 + C2 done · ready for your listen_
 > Context: after the M1 audio smoke test two things surfaced — (1) **prose is
 > skipped** while listening, and (2) the **skip / rollback** controls are
 > **unpredictable** (they jump by an arbitrary 200-char cue, not by paper
@@ -162,33 +162,50 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
       resume = no gap / no duplicate; skip = +1 cue; replay = last finished cue. A live
       server read-through confirms the previously-vanishing abstract sentence is now spoken.
 
-**Checkpoint 2 — section-aware navigation — PENDING (awaiting your listen + go-ahead)**
+**Checkpoint 2 — section-aware navigation — DONE 2026-11-25 (awaiting your listen)**
 > You chose: skip granularity = **section + subsection**; announce section names = **ON**.
-- [ ] `reader/sections.py` (pulled forward from M5) — detect a flat list of **sections**
-      from the ordered blocks, each with a **start cue-index**: `title`, `authors` +
-      `affiliations`, `abstract`, and numbered/bold **section / subsection** headings (A10
-      heuristics: font-size + bold + `^N(\.N)* ` / `Abstract` / `CCS Concepts` /
-      `References` / `Acknowledg…`). LLM refine stays an opt-in flag.
-- [ ] **Carry font info into `Block`** — add `font_size` / `is_bold` (or a `role` hint),
-      propagated from the dominant line of each merged block. `Line` already captures this;
-      `reading_order._merge_into_blocks` currently throws it away.
-- [ ] **Front-matter ordering** — read **title → authors + institutions → abstract** as
-      coherent full-width units *before* the body, independent of the 2-column layout;
-      de-dup the author running-header variant by **role** (not string) so authors are
-      spoken **once**.
-- [ ] **Section-aware skip / rollback (A9)** — next / previous snap to **section /
-      subsection** boundaries; a "now reading: <section>" indicator; keep a fine
-      "next paragraph" too.
-- [ ] **Announce section names (A9, you chose ON)** — speak a short lead-in like
-      "Section 3, Method" when entering / skipping to a section.
-- [ ] **Tests** — section detection on the 2-col + 1-col fixtures; front-matter ordering +
-      author-dedup; keep the 20 passing.
-- [ ] update `transport.js` controls + the "now reading" bar (`esprima`-clean); refresh
-      the A9 / A10 notes.
+> Both confirmed on a live WS read-through over the ACM 2-col sample.
+- [x] `reader/sections.py` (pulled forward from M5) — `detect_sections` builds a flat
+       list of **sections** over the *spoken* blocks, each with a `block_start` (and
+       `cue_start`/`cue_end` filled by the orchestrator): `title`, `authors`+`affiliations`,
+       `abstract`, `keywords`, `ccs`, numbered/bold **section / subsection** headings,
+       `references`, `acknowledgments` (A10 heuristics: font prominence + bold + `^N(\.N)*`
+       / `Abstract` / `CCS Concepts` / `References` / `Acknowledg…`). LLM refine stays opt-in.
+- [x] **Carry font info into `Block`** — `Block`/`text_block` gained `font_size` /
+       `is_bold`; `reading_order._merge_into_blocks` now propagates the dominant font
+       (max line size) + bold (longest line), and splits blocks at a **font transition**
+       (`_FONT_SPLIT_PT=1.5`) or a **marker** line (`_MARKER_RE`) so front matter +
+       headings don't merge into the following body.
+- [x] **Front-matter ordering + author de-dup** — front matter reads title → authors →
+       abstract → keywords (the split makes each its own block); the author running-header
+       *variant* is dropped by **role+position** (`_is_running_header`: page>0, top band,
+       not a genuine heading), so authors are spoken **once** even when the repeated line
+       differs from the front-matter one.
+- [x] **Section-aware skip / rollback (A9)** — new server commands `next_section` /
+       `prev_section` move the playhead to section starts by cue index; `⏭`/`⏮` now jump by
+       section (+ a live cue counter + a "now reading: § <section>" chip). A fine per-cue
+       `skip`/`replay` stays client-side (lossless) and is kept as a fallback.
+- [x] **Announce section names (ON)** — on a *jump* the first cue leads with "Section 3,
+       Method" (`_lead_in_spoken` replaces a standalone heading cue to avoid "Section 3,
+       Method 3. Method"); front-matter kinds are not announced (they name themselves).
+- [x] **Tests** — 12 new hermetic tests in `tests/test_sections.py` (front-matter + body
+       detection, variant-author de-dup, the `allow_prominent`/`seen_numbered_section` gate
+       that stops 2-col author names becoming sections, cue-range contiguity, next/prev
+       navigation by cue index, the spoken lead-in) → **32 tests pass**; `transport.js`
+       esprima-clean.
+- [x] **transport.js + the "now reading" bar** — the cue counter now updates **live on
+       every event** (and on a section-jump `state` frame, so a jump shows the paragraph it
+       skipped); a `#now-section` chip shows the current section; a section jump clears the
+       stale lookahead and holds cues until the jump's `state` frame resyncs. `esprima`-clean.
 
-> 📝 comment: _Checkpoint 1 (fast win) is built + verified — please **listen** on the
-> Springer / ACM samples and confirm the skip is gone and pause/skip feel reliable. Then
-> green-light Checkpoint 2 (section-aware navigation + spoken section names)._
+> 📝 comment: _Both checkpoints are built + verified. Checkpoint 1 (fast win) already
+> confirmed by your listen. Checkpoint 2 (section-aware navigation, spoken section names,
+> live counter, front-matter de-dup) is built + 32 tests pass + a live WS read-through on
+> the ACM sample confirms: `next_section`/`prev_section` snap to section starts, the counter
+> jumps to the right paragraph, and landing on "1 Introduction" speaks "Section 1,
+> Introduction". **Please listen** on the Springer / ACM samples (hard-refresh Ctrl+Shift+R)
+> and confirm the section jumps + spoken names + live counter feel right — then we can move
+> to M2 (figures/tables)._
 
 ### M2 — Figures & tables  _status: [ ] not started_
 - [ ] `ingest/figure_table.py` — pdfplumber (tables) + image crops (figures)
@@ -224,8 +241,17 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ ] error handling + unit tests (ingest, references, timeline, scope)
 > 📝 comment:
 
-### M7 — Packaging (later, post-v1)  _status: [ ] not started_
+### M7 — UI revamp  _status: [ ] not started_
+- [ ] make sure the cue being read is the one in now reading at all times as it changes to the next cue to soon in previous versions
+- [ ] make a light UI with high contrast as default but give a dark high contrast option. also add a dracula theme
+- [ ] change to the now reading and transcript parts of the UI: text (particularly now reading) should have high contrast an larger for low-vision users (primary target of this tool). previous cues and forward cues should also show up similar the lyrics UI in Apple Music instead of the block system in place for previous milestones ![lyricsUI](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnxUzHYsARyk4-WAldA5Gc-DO6YlAn45W3kaIATVcuBryai1UxxX0iHHv_&s=10)
+- [ ] transcript block can stay next to the paper when screen space is afforded
+- [ ] show markdown version of table and the figure being explained whenever that's happening
+> 📝 comment:
+
+### M8 — Packaging (later, post-v1)  _status: [ ] not started_
 - [ ] **PyInstaller / Briefcase** cross-platform binary (`.exe` / AppImage / `.dmg`)
+- [ ] final UI should open on its own window but keep mostly web usage (similar to discord)
 - [ ] `--auto --no-browser` headless polish (A12)
 > 📝 comment:
 

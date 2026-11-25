@@ -6,5 +6,21 @@ section detection and scoped selection.
 """
 
 from .orchestrator import Orchestrator, Cue, build_cues
+from .sections import (
+    Section,
+    detect_sections,
+    section_for_block,
+    is_heading,
+    _body_font_size,
+)
 
-__all__ = ["Orchestrator", "Cue", "build_cues"]
+__all__ = [
+    "Orchestrator",
+    "Cue",
+    "build_cues",
+    "Section",
+    "detect_sections",
+    "section_for_block",
+    "is_heading",
+    "_body_font_size",
+]

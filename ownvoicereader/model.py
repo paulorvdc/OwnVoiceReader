@@ -91,6 +91,13 @@ class Block:
     image: Optional[bytes] = None
     caption: Optional[str] = None
     table_grid: Optional[list[list[Any]]] = None
+    # M1.5: typographic cues for section detection (pulled forward from M5).
+    # Propagated from the block's dominant line by reading_order:
+    #   font_size = the *largest* span size in the block (a heading stands out
+    #               by being bigger than the ~9-10pt body)
+    #   is_bold   = the boldness of the block's longest (main) line
+    font_size: float = 0.0
+    is_bold: bool = False
 
     # --- helpers --------------------------------------------------------- #
     @classmethod
@@ -100,8 +107,11 @@ class Block:
         page: int,
         bbox: Optional[BBox] = None,
         source: BlockSource = BlockSource.TEXT,
+        font_size: float = 0.0,
+        is_bold: bool = False,
     ) -> "Block":
-        return cls(kind=BlockKind.TEXT, text=text, page=page, bbox=bbox, source=source)
+        return cls(kind=BlockKind.TEXT, text=text, page=page, bbox=bbox, source=source,
+                   font_size=font_size, is_bold=is_bold)
 
     @classmethod
     def figure_block(
