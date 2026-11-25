@@ -43,7 +43,7 @@ audio smoke test). What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🔜 **M2** figures & tables: pdfplumber tables, figure crops, LLM explanations
+- 🔜 **M2** figures & tables: PyMuPDF tables, figure crops, LLM explanations
   at the *first textual reference* (`Fig. 3` / `Table 2(b)`).
 - 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
 - 🔜 **M4** config layering + live switching of the LLM model.
@@ -86,8 +86,9 @@ pip install -e .
 ```
 
 Core deps are intentionally light: `pymupdf`, `fastapi`, `uvicorn`,
-`pydantic`, `pydantic-settings`, `jinja2`, `httpx`, `websockets`,
-`python-multipart`.
+`pydantic`, `pydantic-settings`, `jinja2`, `websockets`,
+`python-multipart`, `piper-tts`. The vision LLM (M2.5) is an optional
+`[vision]` extra — the `ollama` library talking to a local Ollama server.
 
 ### 3. (Optional) PDF.js
 

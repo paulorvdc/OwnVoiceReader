@@ -64,7 +64,7 @@ class Config:
     auto: bool = False                 # read start-to-finish without UI control
 
     # --- LLM / voice / style (M4 makes these live-switchable) ----------- #
-    llm_provider: Optional[str] = None   # e.g. "ollama" or a litellm model id
+    llm_provider: Optional[str] = None   # the local Ollama server (via the `ollama` lib); default provider is "ollama"
     llm_model: Optional[str] = None
     voice: Optional[str] = None
     style: Optional[str] = None        # academic-calm | quick-scan | narrative | lecture

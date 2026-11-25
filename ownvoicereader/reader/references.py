@@ -230,6 +230,8 @@ def build_index(blocks: list[Block]) -> ReferenceIndex:
                 e.first_ref_block_id = b.id
                 e.first_ref_pos = i
                 e.first_ref_raw = ref.raw
+                if e.page == 0:      # no caption yet → use the reference's page
+                    e.page = b.page  # for a captionless target, its highlight
 
     return idx
 

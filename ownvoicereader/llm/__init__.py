@@ -1,1 +1,1 @@
-"""LLM layer: provider-agnostic client (LiteLLM + Ollama), explainer, director."""
+"""LLM layer: local Ollama client (via the `ollama` library, M2.5), explainer, director."""

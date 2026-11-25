@@ -38,7 +38,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ x] **A2 No-vision fallback** — caption + context **text summary** (mandatory, not optional)
   - [ x] accept  - [ ] override →
   > 📝 comment:
-- [x ] **A3 Table detector** — **pdfplumber** + vision fallback for unstructured tables
+- [x ] **A3 Table detector** — **PyMuPDF** `find_tables()` + vision fallback for unstructured tables
   - [ x] accept  - [ ] override →
   > 📝 comment:
 - [x ] **A4 OCR engine** — **RapidOCR** default, Tesseract alt
@@ -47,7 +47,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x ] **A5 Interface** — **local web app** (Python server + browser **PDF.js** viewer)
   - [ x] accept  - [ ] override →
   > 📝 comment:
-- [ x] **A6 LLM client** — **LiteLLM** + thin Ollama path (one interface for all providers)
+- [ x] **A6 LLM client** — **`ollama` library** → local Ollama `/api/chat` (one interface; vision via M2.5, `lfm3-vl:2b`)
   - [ ] accept  - [ ] override →
   > 📝 comment: make sure I can choose the model somewhere on the interface to match my machine and keep minimal what needs to be installed prior and allow some API access here if the user wants. use tokens from the OS env and make that clear for the user (keeps these security concerns out of our hands)
 - [ x] **A7 Explanation timing** — **first textual reference** default; `--director` opt-in (LLM places them)
@@ -242,29 +242,48 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > when you next open the reader._
 
 ### M2 — Figures & tables  _status: [~] in progress_
-- [~] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables) + `get_images()`/`get_image_info()` (figures); clean caption+body blocks
-- [ ] `llm/client.py` — **httpx** → Ollama OpenAI-compatible `/api/chat` (no litellm — it's absent); streaming; vision inputs
-- [ ] `llm/explainer.py` — figure→**vision** prompt; table→**grid summary**; *spoken*, short, no LaTeX/markdown
+- [~] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables) + `get_pixmap(clip=…)` (figures); clean caption+body blocks
 - [x] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b) / Tbl. 2 / TABLE I`; build reference index
-- [ ] `reader/timeline.py` — **"right-moment"** engine: first-reference `EXPLAIN` events
-- [ ] orchestrator emits + speaks `EXPLAIN` events
-> 📝 comment: _**C1 (reference detection + index) is done + verified.** `reader/references.py`
-> builds a `ReferenceIndex` — one entry per figure/table with its **caption**, the
-> reading-order position of its **first prose reference** (the A7 "right moment"),
-> and a mention count. Pure text (no image/LLM), so it's hermetic: **16 new tests in
-> `tests/test_references.py` → 55 pass total.** A calibration dump on all 4 sample
-> PDFs confirms it detects every style — Springer panels (3a/3b/2c/4a/4b), IEEE roman
-> tables I–VII, colon/period/title-case captions — and locates the *first* prose ref
-> *before* each caption, with **no over-matching** ("Table in …", "Fig. 3abc" rejected).
-> _Known gap:_ in 1-col PDFs the reading-order step merges a caption with its table/figure
-> body into one long block, so `caption_target`'s 140-char cap leaves that caption blank;
-> C2's PyMuPDF extraction (separated caption+body) resolves this.
+- [x] `reader/timeline.py` — **"right-moment"** engine (A7): fire an `EXPLAIN` at each figure/table's *first prose reference*; caption+context composer (A2 base, LLM-free)
+- [x] orchestrator emits + speaks `EXPLAIN` events (pending-queue, navigation-safe)
+- [ ] `llm/explainer.py` — table→**grid summary**; *spoken*, short, no LaTeX/markdown (figure vision is M2.5)
+- [ ] `llm/client.py` — **`ollama` library** → local Ollama `/api/chat` (no litellm, no httpx); streaming; vision inputs (M2.5)
+> 📝 comment: _**C1 (reference detection + index) and C4 ("right-moment" engine)
+> are done + verified.** `reader/references.py` builds a `ReferenceIndex` — one
+> entry per figure/table with its **caption**, the reading-order position of its
+> **first prose reference** (the A7 "right moment"), and a mention count.
+> `reader/timeline.py` maps each entry to the cue that *speaks* that reference and
+> composes the spoken explanation: **caption + context** (A2 base, LLM-free) when a
+> caption exists, else the reference sentence; M2.5 layers vision on top. The
+> orchestrator emits the `EXPLAIN` as a **pending follow-on** (queued right after
+> the reference cue, *not* a new cue) so section/cue navigation is untouched.
+> **14 new tests in `tests/test_timeline.py` → 69 pass total.**
 >
-> **DECISION NEEDED before C3 (explainer): no vision model is installed.** Ollama has only
-> text-only models (`qwen3:8b`, `qwen3:1.7b`, `qwen3-embedding`). Two paths: **(a)** pull a
-> small vision model (~2 GB, e.g. `moondream`) for *real* figure vision, or **(b)** ship the
-> caption+context fallback now (the A2 no-vision path already in `model.py`) and add vision
-> later as an optional drop-in. **Pausing here for your call.**_
+> _**C4 is listenable.** A headless read of the Springer sample over real Piper
+> (22050 Hz) fires 14 explanations, each **immediately after its reference cue** —
+> e.g. "…as shown in Figure 1, all runs exhibit the same MRR…" is followed by
+> "Figure 1 is referenced here: …". A concatenated ref+explain clip is at
+> `/tmp/opencode/explain_demo.wav`. **Pausing here for your listen.**_
+>
+> _Known gap (→ C2): in 1-col PDFs the reading-order step merges a caption with its
+> table/figure body into one long block, so `caption_target`'s 140-char cap leaves
+> that caption blank and the explanation falls back to the *reference sentence*
+> (hence "…is referenced here: For example, in Figure 1, …"). C2's PyMuPDF
+> extraction (separated caption + body) resolves this.
+>
+> _**Decision resolved:** vision is optional (M2.5); the A2 caption+context base
+> (option **b**) is shipped now — it's LLM-free, so the timing is testable without
+> a model. `lfm3-vl:2b` is pulled and wired in M2.5 as the optional enhancement._
+
+### M2.5 — Vision LLM through ollama python library  _status: [ ] not started_
+- [ ] using `lfm3-vl:2b` as the default model add the optional vision description into the caption + context design whenever this or another config vision model is available on that machine. make sure
+- [ ] use client and then chat so that a different ollama server can be configured by the user
+- [x] update pyproject.toml without litellm and pdfplumber. also move piper-tts with the voice installation into the core dependencies. ollama should be in vision.
+> 📝 comment: _**pyproject done (2026-11-25):** dropped `litellm`/`httpx`/`pdfplumber`;
+> `piper-tts` moved into **core** deps; `ollama>=0.6` added to a new **`vision`** extra
+> (the LLM client, M2.5, talks to a local Ollama server via the `ollama` library). The
+> stale `litellm` comment in `config.py` and the `llm/__init__.py` docstring were also
+> cleaned. 69 tests still pass; the full import graph loads._
 
 ### M3 — OCR (text/OCR interchangeable)  _status: [ ] not started_
 - [ ] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer
@@ -289,6 +308,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ ] graceful **LLM-down** degradation: keep reading text, skip explanations, show notice
 - [ ] **resume checkpoint** (JSON position, A14)
 - [ ] error handling + unit tests (ingest, references, timeline, scope)
+- [ ] check documentation for a guided install for the core and optional systems
 > 📝 comment:
 
 ### M7 — UI revamp  _status: [ ] not started_
@@ -325,7 +345,7 @@ ownvoicereader/
 │  ├─ sections.py        [ ]   # heading detection (M5)
 │  └─ scope.py           [ ]   # selection → timeline slice (M5)
 ├─ llm/
-│  ├─ client.py          [ ]   # LiteLLM + Ollama, streaming, vision
+│  ├─ client.py          [ ]   # ollama library, streaming, vision
 │  ├─ explainer.py       [ ]   # vision figures / grid-summary tables
 │  └─ director.py        [ ]   # opt-in LLM timing (--director)
 ├─ voice/

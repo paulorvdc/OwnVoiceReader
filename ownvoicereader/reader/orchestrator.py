@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -34,6 +35,8 @@ from .sections import (
     _body_font_size,
     is_heading,
 )
+from .references import build_index
+from .timeline import ExplainItem, build_explain_schedule
 
 log = logging.getLogger("ownvoicereader.reader.orchestrator")
 
@@ -272,6 +275,15 @@ class Orchestrator:
         # per-style knob.
         self.announce = True
         self._announce_next = False
+        # M2 C4 (A7 "right moment"): explain each figure/table at its *first prose
+        # reference*. ``explain_schedule`` maps a cue index to the figure/tables to
+        # speak *immediately after* that cue; ``_pending_explain`` holds the ones
+        # queued by a just-played cue, emitted ahead of the next text cue so the cue
+        # playhead (and thus navigation) is untouched. The composer is the A2
+        # caption+context base; M2.5 layers vision on top.
+        self.reference_index = build_index(doc.blocks)
+        self.explain_schedule = build_explain_schedule(self.cues, doc.blocks, self.reference_index)
+        self._pending_explain: deque[ExplainItem] = deque()
 
     # --- introspection --------------------------------------------------- #
     @property
@@ -437,18 +449,61 @@ class Orchestrator:
             meta=cue.meta,
         )
 
+    async def _synthesize(self, text: str) -> Optional[bytes]:
+        """Synthesize ``text`` with the current style/voice. Returns the WAV
+        bytes, or ``None`` when there is no TTS or synthesis failed — the caller
+        decides whether a failure becomes a NOTICE."""
+        if self.tts is None:
+            return None
+        try:
+            return await self.tts.synthesize(text, self._style, self._voice)
+        except TtsUnavailable as exc:
+            log.warning("TTS unavailable: %s", exc)
+            return None
+        except Exception:  # pragma: no cover - defensive
+            log.exception("TTS error")
+            return None
+
+    def _explain_event(self, item: ExplainItem) -> ReadingEvent:
+        """A figure/table explanation spoken *at its first reference* (A7).
+
+        ``meta`` marks it as an ``explain`` (so the viewer can style it in M7)
+        and carries the figure/table's page + bbox for the follow-along
+        highlight. It has **no** ``index`` on purpose: an explanation is a pending
+        follow-on, not a cue, so the cue counter is not advanced by it."""
+        return ReadingEvent(
+            type=ReadingEventType.EXPLAIN,
+            text=item.text,
+            block_id=None,
+            page=item.page,
+            meta=item.meta,
+        )
+
     async def emit_next(self) -> Optional[tuple[ReadingEvent, Optional[bytes]]]:
-        """Synthesize the cue at ``pos`` and return (event, wav_bytes).
+        """Return the next reading unit and its WAV bytes (or ``None``).
 
-        Returns ``None`` when the reading is finished. On a TTS failure the
-        cue is skipped with a NOTICE event instead of crashing (M6 path).
+        A **pending figure/table explanation** (A7) is emitted *first* — it was
+        queued by the cue just spoken, so "…as shown in Fig. 3, the results…" is
+        followed by "Figure 3 shows …" before the next prose cue. Otherwise the
+        text cue at ``pos`` is played and any explanation scheduled for it is
+        queued to speak next.
 
-        When the reader jumped into this cue (``_announce_next``) and the cue
-        carries a section ``lead_in``, the spoken form leads with the section
-        name ("Section 3, Method") so the listener knows where they landed.
+        Returns ``None`` only when the reading is finished *and* no explanation
+        is pending. On a TTS failure a text cue becomes a NOTICE (M6 path); a
+        failed explanation is simply skipped (no NOTICE noise).
         """
+        # 1) A pending explanation fires first (checked before done, so a
+        #    last-cue explanation is never dropped).
+        if self._pending_explain:
+            item = self._pending_explain.popleft()
+            event = self._explain_event(item)
+            audio = await self._synthesize(item.text)
+            self._last = (None, audio, event)
+            return event, audio
+        # 2) Done.
         if self.pos >= self.n:
             return None
+        # 3) Play the next text cue; queue its explanations to speak next.
         cue = self.cues[self.pos]
         self.pos += 1
         # Section lead-in (M1.5): spoken only when we jumped into this cue.
@@ -457,39 +512,32 @@ class Orchestrator:
             spoken = _lead_in_spoken(cue.lead_in, cue.text)
         self._announce_next = False
         event = self._event_for(cue, spoken=spoken)
-        audio: Optional[bytes] = None
-        if self.tts is not None:
-            try:
-                audio = await self.tts.synthesize(spoken, self._style, self._voice)
-            except TtsUnavailable as exc:
-                log.warning("TTS unavailable for cue %d: %s", cue.index, exc)
-                event = ReadingEvent(
-                    type=ReadingEventType.NOTICE,
-                    text=f"skipped (voice unavailable: {exc})",
-                    block_id=cue.block_id, page=cue.page,
-                    meta=cue.meta,
-                )
-            except Exception as exc:  # pragma: no cover - defensive
-                log.exception("TTS error on cue %d", cue.index)
-                event = ReadingEvent(type=ReadingEventType.NOTICE,
-                                    text=f"skipped (voice error: {exc})",
-                                    block_id=cue.block_id, page=cue.page,
-                                    meta=cue.meta)
+        audio = await self._synthesize(spoken)
+        # A TTS failure on a *text* cue is a NOTICE so the reader never stalls
+        # silent on it; the cue is advanced past regardless.
+        if self.tts is not None and audio is None:
+            event = ReadingEvent(
+                type=ReadingEventType.NOTICE,
+                text="skipped (voice unavailable)",
+                block_id=cue.block_id, page=cue.page,
+                meta=cue.meta,
+            )
+        for item in self.explain_schedule.get(cue.index, []):
+            self._pending_explain.append(item)
         self._last = (cue, audio, event)
         return event, audio
 
     async def replay(self) -> Optional[tuple[ReadingEvent, Optional[bytes]]]:
-        """Re-synthesize and return the most recently spoken cue."""
+        """Re-synthesize and return the most recently spoken unit.
+
+        That unit may be a *cue* or an *explanation* (a pending follow-on, whose
+        ``_last`` entry has a ``None`` cue). For an explanation we re-synthesize
+        its text from the stored event rather than a cue."""
         if not self._last:
             return None
         cue, _audio, event = self._last
-        audio: Optional[bytes] = None
-        if self.tts is not None:
-            try:
-                audio = await self.tts.synthesize(cue.text, self._style, self._voice)
-            except TtsUnavailable as exc:
-                audio = None
-        return event, audio
+        text = event.text if cue is None else cue.text
+        return event, await self._synthesize(text)
 
     async def run_to_end(self, player) -> int:
         """Headless read to completion (``--auto``). Plays via ``player``.
@@ -500,7 +548,10 @@ class Orchestrator:
 
         spoken = 0
         player = player or NullPlayer()
-        while not self.done:
+        # `emit_next` returns a pending explanation even once the text cues are
+        # exhausted, so loop until it returns None (nothing left to speak) rather
+        # than stopping at `done` — that would drop a last-cue explanation.
+        while True:
             result = await self.emit_next()
             if result is None:
                 break
