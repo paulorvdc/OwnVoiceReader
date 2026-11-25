@@ -242,13 +242,29 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > when you next open the reader._
 
 ### M2 — Figures & tables  _status: [~] in progress_
-- [ ] `ingest/figure_table.py` — pdfplumber (tables) + image crops (figures)
-- [ ] `llm/client.py` — **LiteLLM** + thin Ollama path; streaming; vision inputs
+- [~] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables) + `get_images()`/`get_image_info()` (figures); clean caption+body blocks
+- [ ] `llm/client.py` — **httpx** → Ollama OpenAI-compatible `/api/chat` (no litellm — it's absent); streaming; vision inputs
 - [ ] `llm/explainer.py` — figure→**vision** prompt; table→**grid summary**; *spoken*, short, no LaTeX/markdown
-- [ ] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b)`; build reference index
+- [x] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b) / Tbl. 2 / TABLE I`; build reference index
 - [ ] `reader/timeline.py` — **"right-moment"** engine: first-reference `EXPLAIN` events
 - [ ] orchestrator emits + speaks `EXPLAIN` events
-> 📝 comment:
+> 📝 comment: _**C1 (reference detection + index) is done + verified.** `reader/references.py`
+> builds a `ReferenceIndex` — one entry per figure/table with its **caption**, the
+> reading-order position of its **first prose reference** (the A7 "right moment"),
+> and a mention count. Pure text (no image/LLM), so it's hermetic: **16 new tests in
+> `tests/test_references.py` → 55 pass total.** A calibration dump on all 4 sample
+> PDFs confirms it detects every style — Springer panels (3a/3b/2c/4a/4b), IEEE roman
+> tables I–VII, colon/period/title-case captions — and locates the *first* prose ref
+> *before* each caption, with **no over-matching** ("Table in …", "Fig. 3abc" rejected).
+> _Known gap:_ in 1-col PDFs the reading-order step merges a caption with its table/figure
+> body into one long block, so `caption_target`'s 140-char cap leaves that caption blank;
+> C2's PyMuPDF extraction (separated caption+body) resolves this.
+>
+> **DECISION NEEDED before C3 (explainer): no vision model is installed.** Ollama has only
+> text-only models (`qwen3:8b`, `qwen3:1.7b`, `qwen3-embedding`). Two paths: **(a)** pull a
+> small vision model (~2 GB, e.g. `moondream`) for *real* figure vision, or **(b)** ship the
+> caption+context fallback now (the A2 no-vision path already in `model.py`) and add vision
+> later as an optional drop-in. **Pausing here for your call.**_
 
 ### M3 — OCR (text/OCR interchangeable)  _status: [ ] not started_
 - [ ] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer
