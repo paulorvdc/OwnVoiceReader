@@ -20,6 +20,7 @@ Browser -> server  (text JSON frames)
     {cmd:"stop"}     stop and reset to the start
     {cmd:"next_section"} jump forward to the start of the next section
     {cmd:"prev_section"} roll back to the start of the current/previous section
+    {cmd:"prev_section_skip"} skip back a *whole* section (start of the previous one)
     {cmd:"next_cue"}     skip forward exactly one cue (~paragraph)
     {cmd:"prev_cue"}     roll back exactly one cue (~paragraph)
     (a lossless client-side skip/replay remains as a fallback in transport.js)
@@ -157,6 +158,13 @@ def build_stream_router(state) -> APIRouter:
                 elif cmd == "prev_section":
                     # Roll back to the start of the current / previous section.
                     orch.prev_section()
+                    await websocket.send_json({"type": "state", **orch.status()})
+                elif cmd == "prev_section_skip":
+                    # Double-click on ⏮: skip back a *whole* section — land at the
+                    # start of the section *before* the current one, instead of
+                    # re-hearing the current section's start. Announces the section
+                    # name on landing (the state frame carries it for the chip).
+                    orch.prev_section_skip()
                     await websocket.send_json({"type": "state", **orch.status()})
                 elif cmd == "next_cue":
                     # M1.5: fine forward jump — advance exactly one cue (a

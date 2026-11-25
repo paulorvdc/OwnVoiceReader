@@ -110,7 +110,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
 > 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. _Audio smoke test done (2026-11-24): it surfaced two defects — a **chunker sentence-drop** and **pause/skip** that skip or jump unpredictably — now fixed in **M1.5 Checkpoint 1** (20 tests, live read-through confirms the abstract sentence is spoken)._
 
-### M1.5 — Section-aware navigation + playback integrity  _status: [x] C1 + C2 + C3 done · ready for your listen_
+### M1.5 — Section-aware navigation + playback integrity  _status: [x] C1 + C2 + C3 done · confirmed by listen · M1.5 closed_
 > Context: after the M1 audio smoke test two things surfaced — (1) **prose is
 > skipped** while listening, and (2) the **skip / rollback** controls are
 > **unpredictable** (they jump by an arbitrary 200-char cue, not by paper
@@ -218,20 +218,30 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
        to `POST /api/load`, and `onDocument` tears down the old reader/WS + loads the new
        PDF + re-renders — all in the running server. Verified live: swapping ACM → Springer
        mid-session makes a fresh WS handshake report the new document's `cue_count` (253→445).
-- [x] **Tests** — 4 new hermetic tests in `tests/test_sections.py` (`next_cue`/`prev_cue`
-       move exactly one cue; fine rollback ≠ section start; a fine jump landing on a section
-       start announces its name; both clamp at the bounds) → **36 tests pass**; `transport.js`
-       esprima-clean; live WS read-through confirms `next_cue`/`prev_cue` move ±1 and the
-       on-the-fly load swaps the active document.
+- [x] **Double-click on `⏮` skips a *whole* section** (a follow-on you asked for after the
+        C3 listen). A single `⏮` still re-hears the current section; a *double-click* lands at
+        the start of the section *before* the current one — a real "skip a chapter", not a
+        re-hear. It is a genuinely new server command `prev_section_skip` (= start of the
+        *previous* section, clamped to 0 at the first), not a reuse of the re-hear path. A short
+        timer on the client detects the double so the two clicks that precede a `dblclick` do not
+        each fire a jump. (An earlier attempt put this on the fine button lazily; that was
+        rolled back — `git reset` of that commit — and done properly here.)
+- [x] **Tests** — 3 more hermetic tests in `tests/test_sections.py` (`prev_section_skip` lands on
+        the *previous* section start, distinct from the single-click re-hear; a skip landing on a
+        numbered section announces its name; it clamps to 0 at the first) → **39 tests pass**;
+        `transport.js` esprima-clean; live WS read-through confirms `prev_section_skip` goes
+        further back than `prev_section` (from mid "Authors & institutions" pos 3: re-hear → pos 1,
+        skip → pos 0 / the title).
 
-> 📝 comment: _All three M1.5 checkpoints are built + verified. **Please listen** on the
-> Springer / ACM samples (hard-refresh Ctrl+Shift+R — the JS changed) and confirm: (1) the
-> `⏪`/`⏩` fine buttons step one paragraph at a time while `⏮`/`⏭` still jump whole
-> sections; (2) `⏪` at a paragraph start re-hears the *previous* paragraph, not the section
-> start; (3) "Change PDF…" loads a different paper without restarting the server. When it
-> feels right, we move to M2 (figures/tables)._
+> 📝 comment: _All three M1.5 checkpoints are built + verified, and **confirmed by the user
+> listen** (all three C3 points work). One follow-on refinement: **double-click on `⏮` now skips
+> a whole section back** (single click still re-hears the current section) — a new
+> `prev_section_skip` command, not a lazy reuse of the re-hear path. 39 tests pass; the live WS
+> read-through confirms the skip goes further back than the single-click rollback. **M1.5 is
+> closed.** Moving to M2 (figures/tables). Hard-refresh `Ctrl+Shift+R` to pick up the JS change
+> when you next open the reader._
 
-### M2 — Figures & tables  _status: [ ] not started_
+### M2 — Figures & tables  _status: [~] in progress_
 - [ ] `ingest/figure_table.py` — pdfplumber (tables) + image crops (figures)
 - [ ] `llm/client.py` — **LiteLLM** + thin Ollama path; streaming; vision inputs
 - [ ] `llm/explainer.py` — figure→**vision** prompt; table→**grid summary**; *spoken*, short, no LaTeX/markdown

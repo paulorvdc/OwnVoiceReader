@@ -333,3 +333,38 @@ def test_fine_jumps_clamp_at_bounds():
     assert orch._announce_next is False        # the title is not an announced kind
     orch.pos = n
     assert orch.next_cue() == n                # can't advance past the end
+
+
+# --------------------------------------------------------------------------- #
+# Double-click on ⏮: prev_section_skip lands at the *previous* section's start
+# (a full-section skip, not a re-hear of the current section).
+# --------------------------------------------------------------------------- #
+def test_prev_section_skip_goes_to_previous_section_start():
+    """A double-click skip lands at the start of the section *before* the current
+    one — a full-section skip, not the current section's start (which a single
+    click's prev_section gives)."""
+    orch = Orchestrator(_sectioned_doc(), None)
+    orch.pos = 6                       # mid-"1 Introduction" (cues 4..6)
+    assert orch.prev_section() == 4            # single click: re-hear this section
+    orch.pos = 6
+    assert orch.prev_section_skip() == 3       # double click: skip to "Abstract"
+    assert orch._announce_next is False        # abstract is not an announced kind
+
+
+def test_prev_section_skip_landing_on_numbered_section_announces():
+    """Skipping from "3 Results" (cues 9..10) lands on "2 Method" (cue 7), a
+    numbered section, so its name is spoken on the next cue."""
+    orch = Orchestrator(_sectioned_doc(), None)
+    orch.pos = 10
+    assert orch.prev_section_skip() == 7
+    assert orch._announce_next is True
+    ev, _ = asyncio.run(orch.emit_next())
+    assert ev.text.startswith("Section 2, Method"), ev.text
+
+
+def test_prev_section_skip_clamps_at_first():
+    """At the very start there is no previous section, so the skip is a no-op."""
+    orch = Orchestrator(_sectioned_doc(), None)
+    orch.pos = 0
+    assert orch.prev_section_skip() == 0
+    assert orch._announce_next is False        # the title is not an announced kind

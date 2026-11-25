@@ -333,6 +333,24 @@ class Orchestrator:
                 break
         return prev.cue_start if prev else 0
 
+    def prev_section_skip_start(self, pos: int) -> int:
+        """Cue-index to *skip back* to: the start of the section *before* the one
+        containing ``pos`` — i.e. skip the whole current section. Unlike
+        :meth:`prev_section_start` (which, mid-section, returns the current
+        section's *start* so you can re-hear it), this always lands on the
+        *previous* section's start, so a double-click jumps back a full section.
+        Clamps to 0 when there is no previous section."""
+        cur = self.section_at(pos)
+        if cur is None:
+            return 0
+        prev: Optional[Section] = None
+        for sec in self.sections:
+            if sec.index < cur.index:
+                prev = sec
+            else:
+                break
+        return prev.cue_start if (prev and prev.cue_start >= 0) else 0
+
     def _jump_to(self, target: int) -> int:
         """Set the playhead to ``target`` and flag the section name to be spoken
         on the next cue (the rollback / skip lead-in)."""
@@ -349,6 +367,16 @@ class Orchestrator:
     def prev_section(self) -> int:
         """Roll back to the start of the current / previous section."""
         return self._jump_to(self.prev_section_start(self.pos))
+
+    def prev_section_skip(self) -> int:
+        """Skip back a *whole* section: land at the start of the section *before*
+        the current one (a double-click on ⏮).
+
+        Unlike :meth:`prev_section` — which, mid-section, re-hears the current
+        section's *start* — this skips the section you are in and lands on the
+        *previous* section's start. A section name is announced if we land on a
+        section start (``_jump_to`` handles that)."""
+        return self._jump_to(self.prev_section_skip_start(self.pos))
 
     def next_cue(self) -> int:
         """Skip forward exactly one cue (a ~paragraph).

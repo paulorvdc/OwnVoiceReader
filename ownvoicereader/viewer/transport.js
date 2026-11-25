@@ -605,7 +605,9 @@
     // sections, not ~200-char cues), and the fine ⏩ / ⏪ move exactly one cue
     // (a ~paragraph). Every jump moves the server's playhead — the single
     // source of truth — and the reply's `state` frame resyncs the counter +
-    // "now reading" chip (see onState's `_jumping` branch). The lossless
+    // "now reading" chip (see onState's `_jumping` branch). A *double-click* on
+    // ⏮ skips a *whole* section back (`prevSectionSkip` → the section *before* the
+    // current one); a single click just re-hears the current section. The lossless
     // client-side `skip` / `replay` above remain available as fallbacks.
     _jump(cmd, statusText) {
       // Stop whatever is playing and clear the stale lookahead queue so a cue
@@ -624,6 +626,9 @@
 
     nextSection() { this._jump("next_section", "jumping to next section…"); }
     prevSection() { this._jump("prev_section", "rolling back to section…"); }
+    // Double-click on ⏮: skip back a *whole* section (the section *before* the
+    // current one), not a re-hear of the current section's start.
+    prevSectionSkip() { this._jump("prev_section_skip", "skipping back a section…"); }
     nextCue() { this._jump("next_cue", "skip to next paragraph…"); }
     prevCue() { this._jump("prev_cue", "back to previous paragraph…"); }
 
@@ -728,9 +733,27 @@
     // Voice controls (wired once; they reference the current module-level `reader`).
     el.btnPlay.addEventListener("click", () => { if (reader) reader.togglePlay(); });
     el.btnStop.addEventListener("click", () => { if (reader) reader.stop(); });
-    // Coarse jumps (M1.5 C2): ⏭ / ⏮ snap to the next / current·previous section.
+    // Coarse section jumps: ⏭ snaps to the *next* section; ⏮ single-click rolls
+    // back to the current/previous section's start (re-hear it), but a *double-click*
+    // on ⏮ skips a *whole* section — to the start of the section *before* the
+    // current one (a real "skip a chapter", not a re-hear). A short timer detects
+    // the double so the two `click` events that precede a native `dblclick` don't
+    // each fire a section jump.
     el.btnNext.addEventListener("click", () => { if (reader) reader.nextSection(); });
-    el.btnReplay.addEventListener("click", () => { if (reader) reader.prevSection(); });
+    let prevSectionClickTimer = null;
+    el.btnReplay.addEventListener("click", () => {
+      if (!reader) return;
+      if (prevSectionClickTimer !== null) {
+        clearTimeout(prevSectionClickTimer);
+        prevSectionClickTimer = null;
+        reader.prevSectionSkip();            // 2nd click in window → skip a whole section
+      } else {
+        prevSectionClickTimer = setTimeout(() => {
+          prevSectionClickTimer = null;
+          reader.prevSection();              // single click → back to current/prev section
+        }, 250);
+      }
+    });
     // Fine jumps (M1.5 C3): ⏩ / ⏪ move exactly one cue (~paragraph). ⏪ always
     // rolls back one cue rather than to the current section's start.
     el.btnNextCue.addEventListener("click", () => { if (reader) reader.nextCue(); });
