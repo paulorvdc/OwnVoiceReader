@@ -49,7 +49,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
   > 📝 comment:
 - [ x] **A6 LLM client** — **`ollama` library** → local Ollama `/api/chat` (one interface; vision via M2.5, `lfm3-vl:2b`)
   - [ ] accept  - [ ] override →
-  > 📝 comment: make sure I can choose the model somewhere on the interface to match my machine and keep minimal what needs to be installed prior and allow some API access here if the user wants. use tokens from the OS env and make that clear for the user (keeps these security concerns out of our hands)
+  > 📝 comment: UI model picker to match machine; minimal installs; optional cloud API. Tokens from OS env, never stored (keeps secrets out of our hands).
 - [ x] **A7 Explanation timing** — **first textual reference** default; `--director` opt-in (LLM places them)
   - [ x] accept  - [ ] override →
   > 📝 comment:
@@ -60,13 +60,13 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 ### 1.2 New — need your call
 - [ x] **A9 Audio playback location** — **in-browser HTML5 `<audio>`** default; `--playback system` for headless/OS audio
   - [ x] accept  - [ ] override →
-  > 📝 comment: allow for keyboard/headphone media controls rollback and forward to work besides play and pause
+  > 📝 comment: allow keyboard/headphone controls for forward/rollback, not just play/pause
 - [ x] **A10 Section detection** — v1 = **font-size + numbering heuristics** (PyMuPDF font metadata + `§3.1` regex); LLM refine optional flag
   - [ x] accept  - [ ] override →
   > 📝 comment: fallback to llm
 - [x ] **A11 Packaging** — v1 = `pip install ownvoicereader` console script (`ownvoicereader`); true cross-platform **binary** (PyInstaller/Briefcase) deferred to M7
   - [ x] accept  - [ ] override →
-  > 📝 comment: yes pip install but create setup.py and let me handle distribution later
+  > 📝 comment: pip install yes; make setup.py; I handle distribution later
 - [ x] **A12 Headless/CI** — keep `ownvoicereader paper.pdf --auto --no-browser` (full auto-read to system audio, no UI)
   - [ x] accept  - [ ] override →
   > 📝 comment:
@@ -79,7 +79,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 
 ### 1.3 Open (your call — answer or skip)
 - [ x] **Dev OS / environment** — Linux now; cross-platform later? _(Linux assumed)_
-  > 📝 comment: cross-platform on anything that can run python i.e.: windows and mac too
+  > 📝 comment: cross-platform wherever Python runs — Windows + Mac
 - [ x] **Local LLM now?** — will you have **Ollama** running for dev, or cloud-only first?
   > 📝 comment: local only first
 - [ x] **First sample paper** — which PDF do we validate reading-order + selection on?
@@ -97,7 +97,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] `server/app.py` — FastAPI/uvicorn on `127.0.0.1:<port>`, auto-opens browser
 - [x] `viewer/index.html` + **PDF.js** renders the PDF
 - [x] `ownvoicereader paper.pdf` opens the viewer; `ownvoicereader` (no args) → landing page + drag-drop
-> 📝 comment: DONE 2026-11-24. Package renamed `ownvoice`→`ownvoicereader` (exclusivity); conda env `ownvoicereader`; isolated pip config `.pip-ownvoicereader.conf` (bypasses broken NVIDIA index). **Primary flow = upload PDF in the UI** (drag-drop / picker → `POST /api/load` → renders). CLI `paper.pdf` arg kept only for convenience + headless `--auto`. `/pdf` is a top-level route with HTTP range support (206 + `accept-ranges`). Provider secrets shown in UI by name only (never value). Tests: `tests/test_pdf_source.py` (hermetic). PDF.js vendored offline.
+> 📝 comment: DONE 2026-11-24. Renamed `ownvoice`→`ownvoicereader` (exclusivity); conda env + isolated pip config `.pip-ownvoicereader.conf` (bypasses broken NVIDIA index). **Primary flow = UI upload** (`POST /api/load`); CLI `paper.pdf` kept for convenience + headless `--auto`. `/pdf` = top-level route w/ HTTP range support. Provider secrets by name only. Hermetic tests. PDF.js vendored offline.
 
 
 ### M1 — Text reader  _status: [x] done_
@@ -108,7 +108,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] `server/stream.py` — WebSocket: position, transcript, events, controls
 - [x] `viewer/transport.js` — WS client + audio queue + highlight + transcript + controls
 - [x] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
-> 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. _Audio smoke test done (2026-11-24): it surfaced two defects — a **chunker sentence-drop** and **pause/skip** that skip or jump unpredictably — now fixed in **M1.5 Checkpoint 1** (20 tests, live read-through confirms the abstract sentence is spoken)._
+> 📝 comment: _DONE 2026-11-24. 135 cues / 31 blocks / 6pp on the 2-col sample; headers filtered, left col read before right. Voice = Piper `en_US-lessac-medium` — **espeak-ng unprovisionable** (conda/apt/pip all need a system binary we lack), so per decision went to Piper; abstraction still auto-selects espeak-ng if a binary appears. Audio = 16-bit mono WAV, one WS frame/cue, 1-cue lookahead → instant pause/stop. 17 tests pass; `transport.js` esprima-clean. _Smoke test found 2 defects (chunker drop, pause/skip) → fixed in **M1.5 C1**._
 
 ### M1.5 — Section-aware navigation + playback integrity  _status: [x] C1 + C2 + C3 done · confirmed by listen · M1.5 closed_
 > Context: after the M1 audio smoke test two things surfaced — (1) **prose is
@@ -233,13 +233,10 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
         further back than `prev_section` (from mid "Authors & institutions" pos 3: re-hear → pos 1,
         skip → pos 0 / the title).
 
-> 📝 comment: _All three M1.5 checkpoints are built + verified, and **confirmed by the user
-> listen** (all three C3 points work). One follow-on refinement: **double-click on `⏮` now skips
-> a whole section back** (single click still re-hears the current section) — a new
-> `prev_section_skip` command, not a lazy reuse of the re-hear path. 39 tests pass; the live WS
-> read-through confirms the skip goes further back than the single-click rollback. **M1.5 is
-> closed.** Moving to M2 (figures/tables). Hard-refresh `Ctrl+Shift+R` to pick up the JS change
-> when you next open the reader._
+> 📝 comment: _All 3 M1.5 checkpoints built + verified + **user-confirmed**. Follow-on:
+> **double-click `⏮` skips a whole section back** (single click re-hears) — a new
+> `prev_section_skip` command. 39 tests pass; live WS confirms the skip goes further
+> back. **M1.5 closed** → M2. Hard-refresh `Ctrl+Shift+R` for the JS change._
 
 ### M2 — Figures & tables  _status: [~] C1 + C4 + C2 + M2.5 (vision + status badge) done · C3 optional_
 - [x] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables→grid+bbox) + `get_pixmap(clip=…)` (figures→PNG+bbox); de-dup + min-size; append FIGURE/TABLE blocks; `render_region` (M2.5)
@@ -248,43 +245,23 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] orchestrator emits + speaks `EXPLAIN` events (pending-queue, navigation-safe); **starts a background vision-precompute thread** (M2.5)
 - [x] `llm/explainer.py` — vision **figure** description + **table meaning** (rendered region + grid text); *spoken*, short, no LaTeX/markdown (M2.5)
 - [x] `llm/client.py` — **`ollama` library** → local Ollama `/api/chat` (no litellm, no httpx); streaming; vision inputs; user-configurable host (M2.5)
-> 📝 comment: _**C1 (reference detection + index) and C4 ("right-moment" engine)
-> are done + verified.** `reader/references.py` builds a `ReferenceIndex` — one
-> entry per figure/table with its **caption**, the reading-order position of its
-> **first prose reference** (the A7 "right moment"), and a mention count.
-> `reader/timeline.py` maps each entry to the cue that *speaks* that reference and
-> composes the spoken explanation: **caption + context** (A2 base, LLM-free) when a
-> caption exists, else the reference sentence; M2.5 layers vision on top. The
-> orchestrator emits the `EXPLAIN` as a **pending follow-on** (queued right after
-> the reference cue, *not* a new cue) so section/cue navigation is untouched.
+> 📝 comment: _**C1 + C4 done + verified.** `reader/references.py` builds a `ReferenceIndex`
+> — one entry per figure/table: **caption**, **first prose reference** (A7 "right moment"),
+> mention count. `reader/timeline.py` maps each to the cue that *speaks* it; spoken text =
+> **caption + context** (A2 base, LLM-free) if a caption exists, else the reference sentence;
+> M2.5 layers vision. Orchestrator emits `EXPLAIN` as a **pending follow-on** (queued after the
+> reference cue, *not* a new cue) → navigation untouched.
 >
-> _**C2 (figure/table extraction) is done (2026-11-25).** `ingest/figure_table.py`
-> (new) populates `doc.blocks` with **TABLE** blocks (a `find_tables()` cell grid +
-> bbox) and **FIGURE** blocks (a `get_pixmap(clip=Rect(bbox), dpi=150)` PNG + bbox),
-> de-duplicated by overlap and min-size-filtered so a page of icons isn't 23
-> "figures." It runs after `order_lines` in `build_document`; the spoken path is
-> untouched (cue-building and `build_index` skip non-text blocks). The caption gap
-> from C4 is **closed**: `caption_target` no longer rejects a caption merged with its
-> body — it trims the merged block to its first sentence(s) (so the body never leaks
-> into the stored caption), fixing the "…is referenced here:" fallback.
+> _**C2 done 2026-11-25.** `ingest/figure_table.py` populates **TABLE** (`find_tables()` grid +
+> bbox) + **FIGURE** (`get_pixmap(clip=…)` PNG + bbox) blocks, de-dup'd + min-size-filtered;
+> runs after `order_lines`. `caption_target` trims a merged caption+body block to its caption
+> sentence(s), closing C4's "…is referenced here:" gap.
 >
-> _**Calibration (all 4 samples, real Piper listenable):** captions now detected on
-> every sample — **SBC 1→6/6, IEEE 5→9/10, Springer 0→3/15, ACM 0→2/4.** The spoken
-> EXPLAINs now use real captions, e.g. *"Figure 1, illustration of three runs
-> evaluated on two queries that yield the same MRR but with substantial differences
-> in predictions"* (was "…is referenced here: For example, in Figure 1, …").
-> **Known limitations (→ C3 / M2.5, not C2):** (a) a *table* caption still includes
-> the table's row text (the caption line is merged with the grid in the text layer),
-> so the spoken table caption is noisy — C3's grid summary replaces it with clean
-> column/row prose; (b) a few **captionless** entries (sub-panels like `fig:3a` that
-> inherit the parent's caption; and a "bare label on its own line" case, IEEE
-> `TABLE I`) fall back to the reference sentence — M2.5 vision can fill these.
-> **8 new hermetic tests in `tests/test_figure_table.py` + 4 in
-> `tests/test_references.py` → 81 pass total.**_
->
-> _**Decision resolved:** vision is optional (M2.5); the A2 caption+context base
-> (option **b**) is shipped now — it's LLM-free, so the timing is testable without
-> a model. `lfm3-vl:2b` is pulled and wired in M2.5 as the optional enhancement._
+> _**Calibration:** captions on every sample — **SBC 1→6/6, IEEE 5→9/10, Springer 0→3/15, ACM
+> 0→2/4**; EXPLAINs use real captions. **8 + 4 → 81 tests.** **Limits → C3/M2.5:** table
+> captions still include row text (noisy); a few captionless entries (`fig:3a` sub-panels,
+> IEEE `TABLE I`) fall back to the reference sentence. **Decision resolved:** vision optional
+> (M2.5); A2 base shipped (LLM-free, testable model-less); `lfm3-vl:2b` wired in M2.5._
 
 ### M2.5 — Vision LLM through ollama python library  _status: [x] done · listenable_
 - [x] using `lfm3-vl:2b` as the default model add the optional vision description into the caption + context design whenever this or another config vision model is available on that machine. make sure
@@ -292,77 +269,36 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] try and calculate vlm explanations in the background (when indexing) and serve them at the appropriate time
 - [x] use client and then chat so that a different ollama server can be configured by the user
 - [x] update pyproject.toml without litellm and pdfplumber. also move piper-tts with the voice installation into the core dependencies. ollama should be in vision.
-> 📝 comment: _**pyproject done (2026-11-25):** dropped `litellm`/`httpx`/`pdfplumber`;
-> `piper-tts` moved into **core** deps; `ollama>=0.6` added to a new **`vision`** extra
-> (the LLM client, M2.5, talks to a local Ollama server via the `ollama` library). The
-> stale `litellm` comment in `config.py` and the `llm/__init__.py` docstring were also
-> cleaned. 69 tests still pass; the full import graph loads._
+> 📝 comment: _**pyproject done 2026-11-25:** dropped `litellm`/`httpx`/`pdfplumber`;
+> `piper-tts` → **core**; `ollama>=0.6` → new **`vision`** extra (M2.5 client talks to a
+> local Ollama server via the `ollama` library). Stale `litellm` refs cleaned. 69 tests pass._
 >
-> _**M2.5 done + verified (2026-11-25).** New `llm/client.py` + `llm/explainer.py`.
+> _**M2.5 done + verified 2026-11-25.** New `llm/client.py` + `llm/explainer.py`.
+> - **Client (A6):** wraps the **`ollama`** lib (`OllamaClient`) behind `LlmClient` (mirrors
+>   `voice/tts_engine.py`): `chat`/`describe`/`list_models`/`has_model`/`available`.
+>   `NullLlmClient` = graceful "off" → degrades to A2 base, never crashes. Host user-configurable
+>   via `OLLAMA_HOST`/`--llm` from OS env, never persisted; lazy import (core install still loads).
+> - **Explainer:** `link_media` pairs each figure/table **block** with its caption target
+>   (C2-deferred type-aware match, needed since vision needs pixels). Two invariants → **each
+>   figure/table its own description**: (1) **same kind** — FIGURE↔`fig:`, TABLE↔`table:`;
+>   (2) **2-D proximity** — nearest caption by *x+y*, not y-only (once swapped a left-col table
+>   with a right-col figure). Cross-page/captionless → A2. `describe` sends the **figure image**
+>   to the VLM and, for a **table**, the *rendered region + grid text* (explains *meaning*);
+>   `precompute` fills `ExplainItem.vision`, recomposing to **prefer vision over A2**.
+> - **Background (A7):** orchestrator runs `precompute` for the whole paper in a **daemon thread**
+>   at load; if vision off/slow, A2 caption+context is spoken — read never silent/blocked. Vision
+>   phrase tidied (`_clean_vision`) to drop "this figure shows…" lead-ins.
+> - **Wiring + badge:** `get_llm_client(state)` (cached, like `get_tts_engine`) feeds web +
+>   headless. **Vision badge** (read-only chip, like Piper's, via `_vision_info` in WS `hello`)
+>   shows the resolved model **green when reachable / red "off" when not**; hello *probes*
+>   reachability in a thread; `/api/info` cache-only.
+> - **Calibration (real `lfm3-vl:2b` listenable):** **SBC 4/6, IEEE 9/10, ACM 2/2, Springer 2/3**
+>   enhanced; rest → clean A2 base. Clip at `/tmp/opencode/m25_vision_demo.wav`.
+> - **Tests:** 15 `test_llm_client` + 23 `test_llm_explainer` + 6 `test_server_api` → **125 pass.**
 >
-> * **Client (A6, M2.5).** `llm/client.py` wraps the **`ollama`** Python library
->   (`OllamaClient`) behind a small `LlmClient` interface (mirrors `voice/tts_engine.py`):
->   `chat` (sync, with streaming), `describe(image, prompt)` (vision), `list_models`,
->   `has_model`, `available` (cached reachability+model probe). A `NullLlmClient` is
->   the graceful "vision off" state, and `build_llm_client(config)` returns the Ollama
->   client when the `[vision]` extra is present, else the null one — so the reader
->   degrades to the A2 base, never crashes. **Host is user-configurable**: `OLLAMA_HOST`
->   (or a `--llm` model) is read from the OS env, never persisted (A6). The `ollama`
->   import is *lazy*, so a core install (no `[vision]`) still imports the module.
-> * **Explainer (vision for figures + meaning for tables).** `llm/explainer.py`:
->   `link_media(blocks)` pairs each figure/table **block** (its pixels / grid) with
->   its caption's target — the C2-deferred "type-aware matching", done now because
->   *vision* needs the pixels. It now enforces two invariants so **each figure and
->   each table gets its own description** (a listener caught a figure's pixels being
->   spoken at a table's reference on the ACM sample): (1) **same kind** — a FIGURE
->   block only ever matches a `fig:` caption and a TABLE block a `table:` one, so a
->   figure can never borrow a table's target; and (2) **2-D proximity** — the nearest
->   caption is chosen by *x + y* distance, not y alone (a y-only match swapped a
->   left-column table with a right-column figure that shared a y-band). Cross-page
->   floats / captionless stay unlinked → A2 fallback. `Explainer.describe` sends the
->   **figure image** to the VLM; for a **table** it sends the *rendered region*
->   **and** the cell grid as text, so the model explains the table's *meaning*.
->   `Explainer.precompute` fills every scheduled `ExplainItem.vision` (recomposing
->   `item.text` via `compose_explanation`, which now **prefers the vision phrase
->   over the A2 caption**).
-> * **Background, serve-at-the-moment (A7).** The orchestrator starts a **daemon
->   thread** at load time that runs `precompute` for the whole paper, so by the time
->   the reader reaches a reference the description is usually ready; if not (vision
->   off / slow / down) the A2 caption+context is spoken — the read is never silent or
->   blocked. The vision phrase is tidied (`_clean_vision`) to drop a redundant
->   self-reference lead-in ("this figure shows…", "the table lists…") so "Figure 3,
->   a pipeline of three stages…" / "Table 1, each graph-embedding model…" flow.
-> * **Wiring + the status badge.** `get_llm_client(state)` (cached, like
->   `get_tts_engine`) feeds both the web (`_make_orchestrator`) and headless
->   (`_run_headless`) paths. The **vision badge** (a read-only status chip, like the
->   Piper voice badge) is driven by `_vision_info(state)` in the WS `hello`: it shows
->   the **client's own final model** (`client.model` — the `--llm` / env / default
->   resolution, *no UI picker*) **green when reachable**, **red "off" when not** so
->   the user knows to start Ollama / pull the model. The hello *probes* reachability
->   (in a thread, so the event loop never blocks on a slow/absent server); `/api/info`
->   stays cache-only. `NullLlmClient` (no `[vision]` extra) → red "off" naming the
->   model to install.
->
-> * **Calibration (all 4 samples, real `lfm3-vl:2b` listenable):** vision now
->   enhances the bulk of explanations — **SBC 4/6, IEEE 9/10, ACM 2/2, Springer 2/3**
->   captioned entries get a spoken description; the rest fall back to the (now clean)
->   A2 base. e.g. *"Table 1, various graph-embedding and ranking methods—DeepWalk,
->   Node2Vec, Metapath2Vec, … across four evaluation categories"* and *"Figure 1, a
->   heterogeneous event network drawn as a graph, in which the large black nodes
->   represent events and are connected to one another"*. A concatenated vision clip is
->   at `/tmp/opencode/m25_vision_demo.wav`.
->
-> * **Tests:** 15 in `tests/test_llm_client.py` (hermetic + live-server, skipped
->   when no server) + 23 in `tests/test_llm_explainer.py` (incl. the cross-column
->   same-kind/2-D regression + the "table lists" lead-in strip) + 6 in
->   `tests/test_server_api.py` (the badge payload) → **125 pass total.**
->
-> _**Known limitations (→ later):** a captionless / cross-page-float figure stays on
-> the A2 base (its caption is clean, so the spoken text is still fine); the vision
-> thread is *best-effort* (no bounded wait on the hot path) — a later milestone can
-> add a short "wait-for-vision" on the first cue if a user wants the enhanced text
-> guaranteed. Tables that are captionless (e.g. IEEE `TABLE I`) use the A2 reference
-> sentence for context but still get a vision description when linked._
+> _**Limits → later:** captionless/cross-page figures stay on A2 (caption clean → text fine);
+> vision thread best-effort (no hot-path wait). Captionless tables (IEEE `TABLE I`) use the A2
+> reference sentence for context, still get a vision description when linked._
 
 ### M3 — OCR (text/OCR interchangeable)  _status: [ ] not started_
 - [ ] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer
@@ -497,4 +433,4 @@ Ollama + local TTS/OCR.
 - [~] **M1.5 Checkpoint 1 (playback integrity) done — awaiting your listen** (2026-11-24). Fixed the **chunker sentence-drop** (~40% word loss on the Springer front-matter block, incl. the abstract opening+middle), the **pause/resume lookahead drop**, **cue-granular skip/replay** (now client-side, predictable), and a latent **TTS-failure stall**. 20 tests pass; live read-through confirms the abstract sentence is now spoken. **Checkpoint 2 (section-aware navigation + spoken section names) is planned and awaiting your go-ahead.**
 - [ ] Ready to start **M2** (figures & tables + LLM explainer + first-reference `EXPLAIN` timeline)
 
-> 📝 comment: _M1 DONE, awaiting user audio smoke test. espeak-ng→Piper pivot (see M1 note). A6 (live model/voice/style in UI) — voice+style selects done in M1; LLM model select is M4. A9 (media-style forward/rollback controls) done in M1. A10 (LLM section-detect fallback) deferred to M2/M4._
+> 📝 comment: _M1 done (smoke test → M1.5 defects fixed). espeak-ng→Piper pivot. A6: voice+style in M1, LLM model select in M4; A9 in M1; A10 → M2/M4._
