@@ -101,10 +101,11 @@ conda activate ownvoicereader
 pip install -e .
 ```
 
-Core deps are intentionally light: `pymupdf`, `fastapi`, `uvicorn`,
-`pydantic`, `pydantic-settings`, `jinja2`, `websockets`,
-`python-multipart`, `piper-tts`. The vision LLM (M2.5) is an optional
-`[vision]` extra — the `ollama` library talking to a local Ollama server.
+Core is **voice-first**: `pymupdf`, `fastapi`, `uvicorn`, `pydantic`,
+`pydantic-settings`, `jinja2`, `websockets`, `python-multipart`, and **`piper-tts`**
+(the local TTS engine — a paper reader is a voice tool, so it ships in core). The
+heavy extras are gated so a bare install stays light: `[vision]` (the `ollama`
+library → a local Ollama server, M2.5) and `[ocr]` (RapidOCR, M3).
 
 ### 3. (Optional) PDF.js
 
@@ -112,17 +113,18 @@ The vendored PDF.js build already ships in
 `ownvoicereader/viewer/vendor/pdfjs/` (downloaded at setup), so the app works
 **offline / local-only** with no network at runtime.
 
-### 4. Voice (Piper) — needed for M1 TTS
+### 4. Voice — Piper ships in core (only the voice model downloads)
 
 TTS is powered by **Piper**, a local neural TTS engine (no cloud, no API key).
-The `piper-tts` wheel provides the `piper` binary; a voice model (~63 MB) is
-downloaded on first use into `~/.cache/ownvoicereader/voices/` (override with
-`OWNVOICEREADER_VOICE_DIR`):
+Because a paper reader *is* a voice tool, **`piper-tts` ships in the core
+install** — the `pip install -e .` above already gives you the `piper` binary.
+Only the **voice model** (~63 MB) is fetched on first use, into
+`~/.cache/ownvoicereader/voices/` (override with `OWNVOICEREADER_VOICE_DIR`):
 
 ```bash
-pip install "piper-tts"          # provides the piper binary
-# first run downloads en_US-lessac-medium automatically
-# …or fetch it yourself:
+# the `piper` binary already comes with the core install — nothing to install here
+# first run downloads en_US-lessac-medium automatically …
+# …or fetch a voice yourself (a handy fallback for offline / locked-down setups):
 #   curl -L -o ~/.cache/ownvoicereader/voices/en_US-lessac-medium.onnx \
 #     https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
 ```
