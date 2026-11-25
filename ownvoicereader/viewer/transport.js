@@ -9,7 +9,7 @@
  * M1 adds the reading transport:
  *   - a WebSocket to /ws that streams reading events + WAV audio
  *   - an HTML5 <audio> element that plays the streamed audio (A9)
- *   - play / pause / stop / skip / replay controls
+ *   - play / pause / stop + section & paragraph navigation controls
  *   - a "now reading" bar, a transcript, and a highlight overlay that follows
  *     the text being spoken (page + bbox).
  */
@@ -288,7 +288,6 @@
       this.playing = false;
       this.queue = [];           // pending Audio objects (lookahead buffer)
       this.current = null;       // the Audio currently playing
-      this.lastBlob = null;      // blob of the last cue actually heard (for replay)
       this.waitingForCue = false;
       this.expectingAudio = false;
       this.audioMeta = null;
@@ -426,7 +425,6 @@
       const blob = new Blob([data], { type: "audio/wav" });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio._blob = blob;   // keep the bytes so we can re-play this cue (replay)
       this.queue.push(audio);
       // A cue fully arrived: we may fetch the next one (lookahead).
       this.waitingForCue = false;
@@ -441,8 +439,6 @@
       if (this.queue.length) {
         this.current = this.queue.shift();
         this.current.onended = () => {
-          this.lastBlob = this.current._blob || null;  // remember the cue we
-          // just finished, so "replay" (rollback) re-hears it — not the next one.
           this.current = null;
           this.pump();
           this.maybeFetchMore();
@@ -571,31 +567,6 @@
       setTimeout(() => this.play(), 150);
     }
 
-    // Skip forward to the next cue. Lossless: stop the current cue and let the
-    // next one (the lookahead already in the queue, or a fresh `continue`) play.
-    // Nothing produced-but-unheard is discarded.
-    skip() {
-      if (this.current) { this.current.pause(); this.current = null; }
-      this.playing = true;
-      el.btnPlay.textContent = "⏸";
-      this.pump();           // play the queued lookahead, if any
-      this.maybeFetchMore(); // else fetch the next cue
-    }
-
-    // Roll back to (re-hear) the last cue we actually played. Client-side: we
-    // kept its blob, so no server round-trip and nothing is skipped.
-    replay() {
-      if (this.current) { this.current.pause(); this.current = null; }
-      if (!this.lastBlob) { setStatus("nothing to replay yet", ""); return; }
-      this.current = new Audio(URL.createObjectURL(this.lastBlob));
-      this.current.onended = () => {
-        this.current = null; this.pump(); this.maybeFetchMore();
-      };
-      this.playing = true;
-      el.btnPlay.textContent = "⏸";
-      try { this.current.play(); } catch (_) {}
-    }
-
     // `waitingForCue` is set when a `continue` goes out and cleared when its
     // audio (or end) arrives, in onBinary / onEnd.
 
@@ -607,8 +578,7 @@
     // source of truth — and the reply's `state` frame resyncs the counter +
     // "now reading" chip (see onState's `_jumping` branch). A *double-click* on
     // ⏮ skips a *whole* section back (`prevSectionSkip` → the section *before* the
-    // current one); a single click just re-hears the current section. The lossless
-    // client-side `skip` / `replay` above remain available as fallbacks.
+    // current one); a single click just re-hears the current section.
     _jump(cmd, statusText) {
       // Stop whatever is playing and clear the stale lookahead queue so a cue
       // produced *before* the jump can't be re-heard. The server moves the
