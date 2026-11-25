@@ -350,6 +350,27 @@ class Orchestrator:
         """Roll back to the start of the current / previous section."""
         return self._jump_to(self.prev_section_start(self.pos))
 
+    def next_cue(self) -> int:
+        """Skip forward exactly one cue (a ~paragraph).
+
+        The fine complement to :meth:`next_section`: instead of snapping to a
+        section boundary, it advances the playhead by a single cue and announces
+        a section name only if the new position happens to land on a section
+        start (``_jump_to`` already handles that).
+        """
+        return self._jump_to(self.pos + 1)
+
+    def prev_cue(self) -> int:
+        """Roll back exactly one cue (a ~paragraph).
+
+        Unlike :meth:`prev_section` (which, mid-section, snaps to the current
+        section's *start*), this always moves back by a single cue, so from the
+        start of a cue it re-hears the previous paragraph rather than jumping to
+        the section start. A section name is announced if we land on a section
+        start.
+        """
+        return self._jump_to(self.pos - 1)
+
     # --- live settings (M4) --------------------------------------------- #
     def set_style(self, name: str) -> str:
         self._style = get_style(name)

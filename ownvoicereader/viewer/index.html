@@ -193,16 +193,22 @@
 
     <div class="group voice-controls disabled" id="voice-controls"
          title="Reading controls — start/stop the paper being read aloud">
-      <button id="btn-replay" title="Roll back to this / previous section start">⏮</button>
+      <button id="btn-replay" title="Back to previous section">⏮</button>
+      <button id="btn-prev-cue" title="Back one paragraph">⏪</button>
       <button id="btn-play" title="Play / Pause (space)">▶</button>
       <button id="btn-stop" title="Stop / reset">⏹</button>
-      <button id="btn-next" title="Skip to next section">⏭</button>
+      <button id="btn-next-cue" title="Forward one paragraph">⏩</button>
+      <button id="btn-next" title="Forward to next section">⏭</button>
       <span class="progress" id="progress" title="reading position">–</span>
     </div>
 
     <div class="group voice-controls" id="voice-settings">
       <select id="style-select" title="Reader style" disabled></select>
       <select id="voice-select" title="Voice" disabled></select>
+    </div>
+
+    <div class="group" title="Load a different PDF without restarting the server">
+      <button id="change-pdf" title="Change PDF — load a different file on the fly">Change PDF…</button>
     </div>
   </footer>
 

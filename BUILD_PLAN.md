@@ -110,7 +110,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [x] `reader/orchestrator.py` — read text aloud; **pause / resume / stop / skip / replay**
 > 📝 comment: _DONE (2026-11-24). 135 cues / 31 blocks / 6 pp on the 2-col sample, page numbers + running headers filtered, left column fully read before right. Piper `en_US-lessac-medium` (22050 Hz) as the local voice — **espeak-ng could not be provisioned** (conda-forge resolve fails, apt needs sudo, the pip `espeakng` pkg is only a subprocess wrapper needing the binary+voice data, none present), so per the decision "espeak-ng first, then Piper" we went straight to Piper; the `TtsEngine` abstraction still auto-selects espeak-ng if a binary ever appears. Audio is self-describing 16-bit mono WAV over one binary WS frame per cue; browser pulls the next cue (`continue`) with 1-cue lookahead → instant pause/stop. 17 hermetic tests pass (incl. 2-col PyMuPDF fixture); `transport.js` esprima-clean. _Audio smoke test done (2026-11-24): it surfaced two defects — a **chunker sentence-drop** and **pause/skip** that skip or jump unpredictably — now fixed in **M1.5 Checkpoint 1** (20 tests, live read-through confirms the abstract sentence is spoken)._
 
-### M1.5 — Section-aware navigation + playback integrity  _status: [x] C1 + C2 done · ready for your listen_
+### M1.5 — Section-aware navigation + playback integrity  _status: [x] C1 + C2 + C3 done · ready for your listen_
 > Context: after the M1 audio smoke test two things surfaced — (1) **prose is
 > skipped** while listening, and (2) the **skip / rollback** controls are
 > **unpredictable** (they jump by an arbitrary 200-char cue, not by paper
@@ -198,14 +198,38 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
        skipped); a `#now-section` chip shows the current section; a section jump clears the
        stale lookahead and holds cues until the jump's `state` frame resyncs. `esprima`-clean.
 
-> 📝 comment: _Both checkpoints are built + verified. Checkpoint 1 (fast win) already
-> confirmed by your listen. Checkpoint 2 (section-aware navigation, spoken section names,
-> live counter, front-matter de-dup) is built + 32 tests pass + a live WS read-through on
-> the ACM sample confirms: `next_section`/`prev_section` snap to section starts, the counter
-> jumps to the right paragraph, and landing on "1 Introduction" speaks "Section 1,
-> Introduction". **Please listen** on the Springer / ACM samples (hard-refresh Ctrl+Shift+R)
-> and confirm the section jumps + spoken names + live counter feel right — then we can move
-> to M2 (figures/tables)._
+**Checkpoint 3 — fine jump/rollback + on-the-fly document swap — DONE 2026-11-25 (awaiting your listen)**
+> Three refinements you asked for after the C2 listen.
+- [x] **Fine paragraph jump / rollback (the buttons C2 had hidden).** C2 rewired
+       `⏭`/`⏮` to *section* jumps and left the per-cue `skip`/`replay` unwired. Now both
+       granularities are visible: `⏩`/`⏪` (fine, one cue ≈ a paragraph) sit between the
+       coarse `⏭`/`⏮` (section). They share one server-side mechanism with the section
+       jumps (`_jump` + a `state` reply), so the live counter + "now reading" chip resync
+       the same way.
+- [x] **`⏪` rolls back *one cue*, not to the section start** (your specific point). New
+       server commands `next_cue` / `prev_cue` = `pos ± 1`; the coarse `prev_section`
+       still snaps to the current section's start when you're mid-section, but the fine
+       `prev_cue` always moves exactly one paragraph — so from the start of a cue it
+       re-hears the *previous* paragraph instead of jumping to the section start. A fine
+       jump that *lands* on a section start still speaks the lead-in ("Section 3, Results").
+- [x] **"Change PDF…" button (on-the-fly document swap, no server restart).** The server
+       already supported it (`POST /api/load` + `onDocument`, used by the landing drop
+       zone); C3 exposes it in the reading bar. Clicking it opens the file picker, uploads
+       to `POST /api/load`, and `onDocument` tears down the old reader/WS + loads the new
+       PDF + re-renders — all in the running server. Verified live: swapping ACM → Springer
+       mid-session makes a fresh WS handshake report the new document's `cue_count` (253→445).
+- [x] **Tests** — 4 new hermetic tests in `tests/test_sections.py` (`next_cue`/`prev_cue`
+       move exactly one cue; fine rollback ≠ section start; a fine jump landing on a section
+       start announces its name; both clamp at the bounds) → **36 tests pass**; `transport.js`
+       esprima-clean; live WS read-through confirms `next_cue`/`prev_cue` move ±1 and the
+       on-the-fly load swaps the active document.
+
+> 📝 comment: _All three M1.5 checkpoints are built + verified. **Please listen** on the
+> Springer / ACM samples (hard-refresh Ctrl+Shift+R — the JS changed) and confirm: (1) the
+> `⏪`/`⏩` fine buttons step one paragraph at a time while `⏮`/`⏭` still jump whole
+> sections; (2) `⏪` at a paragraph start re-hears the *previous* paragraph, not the section
+> start; (3) "Change PDF…" loads a different paper without restarting the server. When it
+> feels right, we move to M2 (figures/tables)._
 
 ### M2 — Figures & tables  _status: [ ] not started_
 - [ ] `ingest/figure_table.py` — pdfplumber (tables) + image crops (figures)

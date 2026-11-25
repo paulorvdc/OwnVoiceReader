@@ -286,3 +286,50 @@ def test_body_font_size_ignores_headings():
         B("Another body sentence with even more words to carry the mode along now.", 0, 50, 130, fs=9),
     ]
     assert _body_font_size(blocks) == 9.0
+
+
+# --------------------------------------------------------------------------- #
+# Fine per-cue navigation: next_cue / prev_cue move exactly one cue
+# --------------------------------------------------------------------------- #
+def test_next_cue_advances_by_one():
+    """A fine forward step is +1 cue (a ~paragraph), not a section snap."""
+    orch = Orchestrator(_sectioned_doc(), None)
+    orch.pos = 5                       # mid-"1 Introduction" (cues 4..6)
+    assert orch.next_cue() == 6
+    assert orch._announce_next is False        # 6 is not a section start
+
+
+def test_prev_cue_rolls_back_by_one_not_to_section_start():
+    """The fine rollback goes back ONE cue, not to the current section's start.
+    At cue 6 (mid "1 Introduction", 4..6) the coarse prev_section snaps to 4,
+    whereas the fine prev_cue goes to 5."""
+    coarse = Orchestrator(_sectioned_doc(), None)
+    coarse.pos = 6
+    assert coarse.prev_section() == 4            # coarse: section start
+
+    fine = Orchestrator(_sectioned_doc(), None)
+    fine.pos = 6
+    assert fine.prev_cue() == 5                 # fine: one cue back, still mid-section
+    assert fine._announce_next is False         # 5 is not a section start
+
+
+def test_fine_jump_landing_on_section_start_announces():
+    """A fine jump that happens to land on a section start still flags its name
+    for the spoken lead-in (same path as the coarse jump)."""
+    orch = Orchestrator(_sectioned_doc(), None)
+    # "3 Results" starts at cue 9; from cue 8 a +1 step lands exactly on it.
+    orch.pos = 8
+    assert orch.next_cue() == 9
+    assert orch._announce_next is True
+    ev, _ = asyncio.run(orch.emit_next())
+    assert ev.text.startswith("Section 3, Results"), ev.text
+
+
+def test_fine_jumps_clamp_at_bounds():
+    orch = Orchestrator(_sectioned_doc(), None)
+    n = orch.n
+    orch.pos = 0
+    assert orch.prev_cue() == 0                # can't roll back past the start
+    assert orch._announce_next is False        # the title is not an announced kind
+    orch.pos = n
+    assert orch.next_cue() == n                # can't advance past the end

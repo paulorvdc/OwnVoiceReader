@@ -36,8 +36,11 @@
     voiceSettings: $("voice-settings"),
     btnPlay: $("btn-play"),
     btnStop: $("btn-stop"),
+    btnPrevCue: $("btn-prev-cue"),
+    btnNextCue: $("btn-next-cue"),
     btnNext: $("btn-next"),
     btnReplay: $("btn-replay"),
+    changePdf: $("change-pdf"),
     progress: $("progress"),
     styleSelect: $("style-select"),
     voiceSelect: $("voice-select"),
@@ -596,16 +599,17 @@
     // `waitingForCue` is set when a `continue` goes out and cleared when its
     // audio (or end) arrives, in onBinary / onEnd.
 
-    // --- section-aware navigation (M1.5 checkpoint 2) -------------------
-    // The ⏭ / ⏮ buttons jump by *section* (server-side), because a cue is only
-    // ~200 chars and the user thinks in paper sections, not cues. A jump moves
-    // the server's playhead, which is the single source of truth; the reply is a
-    // `state` frame carrying the new section + position, which resyncs the
-    // counter + "now reading" chip (see onState's `_jumping` branch).
-    // `skip` / `replay` above remain available as lossless per-cue helpers.
-    _jumpSection(cmd) {
+    // --- navigation jumps (M1.5 checkpoint 2 + fine-cue jump/rollback) -----
+    // Two granularities share one server-side mechanism (`_jump` + a `state`
+    // reply): the coarse ⏭ / ⏮ snap to section starts (the user thinks in
+    // sections, not ~200-char cues), and the fine ⏩ / ⏪ move exactly one cue
+    // (a ~paragraph). Every jump moves the server's playhead — the single
+    // source of truth — and the reply's `state` frame resyncs the counter +
+    // "now reading" chip (see onState's `_jumping` branch). The lossless
+    // client-side `skip` / `replay` above remain available as fallbacks.
+    _jump(cmd, statusText) {
       // Stop whatever is playing and clear the stale lookahead queue so a cue
-      // produced before the jump can't be re-heard. The server moves the
+      // produced *before* the jump can't be re-heard. The server moves the
       // playhead and replies with a `state` frame; we hold until it arrives.
       if (this.current) { this.current.pause(); this.current = null; }
       this.queue.length = 0;
@@ -614,13 +618,14 @@
       this._jumping = true;
       el.overlay.style.display = "none";
       el.btnPlay.textContent = "⏸";
-      setStatus(
-        cmd === "next_section" ? "jumping to next section…" : "rolling back to section…", "");
+      setStatus(statusText, "");
       this.send({ cmd });
     }
 
-    nextSection() { this._jumpSection("next_section"); }
-    prevSection() { this._jumpSection("prev_section"); }
+    nextSection() { this._jump("next_section", "jumping to next section…"); }
+    prevSection() { this._jump("prev_section", "rolling back to section…"); }
+    nextCue() { this._jump("next_cue", "skip to next paragraph…"); }
+    prevCue() { this._jump("prev_cue", "back to previous paragraph…"); }
 
     // Update the "now reading" section chip from a section object
     // ({index, label, kind}). Front-matter kinds (title/abstract/…) show their
@@ -639,7 +644,8 @@
     // --- UI wiring -----------------------------------------------------
     enableControls(enabled) {
       el.voiceControls.classList.toggle("disabled", !enabled);
-      [el.btnPlay, el.btnStop, el.btnNext, el.btnReplay].forEach((b) => (b.disabled = !enabled));
+      [el.btnPlay, el.btnStop, el.btnNext, el.btnReplay,
+       el.btnNextCue, el.btnPrevCue].forEach((b) => (b.disabled = !enabled));
     }
 
     updateVoiceUI() {
@@ -722,10 +728,17 @@
     // Voice controls (wired once; they reference the current module-level `reader`).
     el.btnPlay.addEventListener("click", () => { if (reader) reader.togglePlay(); });
     el.btnStop.addEventListener("click", () => { if (reader) reader.stop(); });
-    // Section-aware jumps (M1.5 checkpoint 2): ⏭ skips to the next section,
-    // ⏮ rolls back to the start of the current / previous section.
+    // Coarse jumps (M1.5 C2): ⏭ / ⏮ snap to the next / current·previous section.
     el.btnNext.addEventListener("click", () => { if (reader) reader.nextSection(); });
     el.btnReplay.addEventListener("click", () => { if (reader) reader.prevSection(); });
+    // Fine jumps (M1.5 C3): ⏩ / ⏪ move exactly one cue (~paragraph). ⏪ always
+    // rolls back one cue rather than to the current section's start.
+    el.btnNextCue.addEventListener("click", () => { if (reader) reader.nextCue(); });
+    el.btnPrevCue.addEventListener("click", () => { if (reader) reader.prevCue(); });
+    // "Change PDF" loads a different document on the fly (no server restart):
+    // it reuses the landing's hidden file input + the uploadFile → onDocument
+    // flow, which tears down the old reader/WS and loads the new document.
+    el.changePdf.addEventListener("click", () => el.fileInput.click());
     el.transcriptToggle.addEventListener("click", () => {
       const open = el.transcript.classList.toggle("open");
       el.transcriptToggle.textContent = open ? "transcript ▴" : "transcript ▾";

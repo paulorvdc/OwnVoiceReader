@@ -20,7 +20,9 @@ Browser -> server  (text JSON frames)
     {cmd:"stop"}     stop and reset to the start
     {cmd:"next_section"} jump forward to the start of the next section
     {cmd:"prev_section"} roll back to the start of the current/previous section
-    (skip / replay are handled client-side in transport.js, losslessly)
+    {cmd:"next_cue"}     skip forward exactly one cue (~paragraph)
+    {cmd:"prev_cue"}     roll back exactly one cue (~paragraph)
+    (a lossless client-side skip/replay remains as a fallback in transport.js)
     {cmd:"set_style", style} / {cmd:"set_voice", voice}   live switch (M4)
     {cmd:"status"}   request the current playback status
 
@@ -156,10 +158,22 @@ def build_stream_router(state) -> APIRouter:
                     # Roll back to the start of the current / previous section.
                     orch.prev_section()
                     await websocket.send_json({"type": "state", **orch.status()})
-                # `skip` and `replay` are handled client-side in transport.js so they
-                # can be lossless and predictable: the client owns its lookahead
-                # queue and re-plays a kept blob, instead of the server advancing
-                # past a cue it produced-but-the-client-has-not-heard.
+                elif cmd == "next_cue":
+                    # M1.5: fine forward jump — advance exactly one cue (a
+                    # ~paragraph). Announces a section name if it lands on a
+                    # section start. The playhead moves server-side; the state
+                    # frame resyncs the viewer's counter + section chip.
+                    orch.next_cue()
+                    await websocket.send_json({"type": "state", **orch.status()})
+                elif cmd == "prev_cue":
+                    # M1.5: fine rollback — go back exactly one cue instead of
+                    # snapping to the current section's start.
+                    orch.prev_cue()
+                    await websocket.send_json({"type": "state", **orch.status()})
+                # `skip` and `replay` remain available as lossless client-side
+                # per-cue helpers in transport.js, but the buttons now use the
+                # server-side fine/coarse commands above so the counter + section
+                # chip resync from a single `state` frame.
                 elif cmd == "set_style":
                     name = orch.set_style(msg.get("style", ""))
                     st = orch.status()
