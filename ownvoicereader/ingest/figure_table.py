@@ -178,3 +178,22 @@ def add_figure_table_blocks(doc: ReadingDocument, source=None) -> int:
         n_tables, n_figs, doc.page_count,
     )
     return len(added)
+
+
+def render_region(source, page: int, bbox, dpi: int = _FIGURE_DPI) -> Optional[bytes]:
+    """Rasterise the page-space region ``bbox`` on ``page`` to PNG bytes.
+
+    The single place page regions are rendered: figure extraction crops its image
+    regions here, and the M2.5 explainer uses it to render a *table* region (the
+    TABLE block carries a grid but no image). ``bbox`` is a :class:`BBox` or a
+    4-tuple. Returns ``None`` on a render failure, so the caller degrades instead
+    of aborting.
+    """
+    try:
+        coords = bbox.to_tuple() if hasattr(bbox, "to_tuple") else bbox
+        rect = Rect(*[float(x) for x in coords])
+        pix = source.doc[page].get_pixmap(clip=rect, dpi=dpi)
+        return pix.tobytes("png")
+    except Exception:  # pragma: no cover - a bad region must not abort the read
+        log.warning("could not render a region on page %d", page, exc_info=True)
+        return None

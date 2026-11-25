@@ -60,12 +60,14 @@ class ExplainItem:
     context: str = ""                # fallback snippet when there is no caption
     page: int = 0                   # the figure/table's page (for the highlight)
     bbox: Optional[BBox] = None
+    vision: str = ""                # M2.5: the vision LLM's spoken description
     text: str = ""                  # the composed, spoken explanation
 
     @property
     def meta(self) -> dict:
         d = {"kind": "explain", "target": self.target, "label": self.label,
-             "label_word": self.label_word, "page": self.page}
+             "label_word": self.label_word, "page": self.page,
+             "vision": bool(self.vision)}
         if self.bbox is not None:
             d["bbox"] = self.bbox.to_dict()
         return d
@@ -79,14 +81,58 @@ def _sentence(text: str) -> str:
     return text if text[-1] in ".!?" else text + "."
 
 
-def compose_explanation(item: ExplainItem) -> str:
-    """Compose the spoken explanation (A2 base: caption + a touch of context).
+# A vision model often opens with a redundant self-reference ("This figure shows…",
+# "It shows…", "This image depicts…") that reads awkwardly after our own label
+# ("Figure 3, this image shows…"). We strip just that lead-in so "Figure 3,
+# <description>" flows. Two shapes: "<determiner> <visual-noun> <verb>" and a bare
+# "<pronoun> <verb>".
+_VISION_LEAD = re.compile(
+    r"^(?:"
+    r"(?:this|that|the|a|an)\s+(?:figure|fig\.?|table|tbl\.?|image|picture|chart|graph|diagram|plot)\s+"
+    r"(?:shows?|depicts?|illustrates?|presents?|contains?|compares?|is|gives?|provides?|displays?)\s+|"
+    r"(?:it|this|that|the)\s+(?:shows?|depicts?|illustrates?|presents?|contains?|compares?|is|gives?|provides?|displays?)\s+"
+    r")",
+    re.IGNORECASE,
+)
+# Bound a vision description to a spoken-friendly length (it may ramble).
+_VISION_MAX_CHARS = 280
 
-    Kept a plain, short, sentence — no LaTeX, no markdown, no code — so it reads
-    naturally through a TTS engine. M2.5 may swap in a vision / LLM description
-    that *augments* this without changing the firing semantics.
+
+def _clean_vision(vision: str) -> str:
+    """Tidy a raw vision answer into a short phrase that follows our label.
+
+    Collapses whitespace, strips a redundant self-reference lead-in, and trims to
+    a spoken-friendly length at a sentence/word boundary.
+    """
+    v = " ".join(vision.split()).strip()
+    if not v:
+        return v
+    v = _VISION_LEAD.sub("", v, count=1)
+    if len(v) > _VISION_MAX_CHARS:
+        cut = v.rfind(". ", 0, _VISION_MAX_CHARS)
+        if cut > _VISION_MAX_CHARS // 2:
+            v = v[: cut + 1]
+        else:
+            cut = v.rfind(" ", 0, _VISION_MAX_CHARS)
+            v = (v[:cut] if cut > 0 else v[:_VISION_MAX_CHARS]).rstrip() + "…"
+    # Lower-case the first word so it reads as the continuation of "Figure 3, …".
+    return v[0].lower() + v[1:] if v else v
+
+
+def compose_explanation(item: ExplainItem) -> str:
+    """Compose the spoken explanation.
+
+    **M2.5 vision first:** when the vision LLM has produced a description
+    (``item.vision``), speak *that* — it says what the figure/table actually shows
+    — prefixed by its label ("Figure 3, a pipeline in which …"). Otherwise fall
+    back to the **A2 base**: the caption when present, else a short context
+    snippet ("…is referenced here: …"). Either way the output is a plain, short,
+    sentence — no LaTeX, no markdown — so it reads naturally through a TTS engine.
     """
     lead = f"{item.label_word} {item.label}"
+    if item.vision:
+        v = _clean_vision(item.vision)
+        return _sentence(f"{lead}, {v}")
     cap = " ".join(item.caption.split())
     if cap:
         # A caption is a title-case noun phrase ("Distribution of … across …").

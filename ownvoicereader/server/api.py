@@ -77,6 +77,7 @@ def _info_payload(state) -> dict:
             "load_error": state.load_error,
             "providers": _provider_names(),
             "voice": voice,
+            "vision": _vision_info(state),
         }
     return {
         "loaded": True,
@@ -84,6 +85,7 @@ def _info_payload(state) -> dict:
         "load_error": None,
         "providers": _provider_names(),
         "voice": voice,
+        "vision": _vision_info(state),
     }
 
 
@@ -114,6 +116,26 @@ def get_tts_engine(state) -> "Optional[object]":
     return getattr(state, "tts", None)
 
 
+def get_llm_client(state) -> "Optional[object]":
+    """Return the shared local LLM / vision client, building it once and caching it.
+
+    ``None`` means the ``[vision]`` extra is not installed — graceful: the reader
+    then speaks the A2 caption+context base. The client is built *eagerly* (cheap,
+    no network) but **not** probed here; the orchestrator probes the server lazily
+    in its background thread so a slow or absent server never delays page load.
+    """
+    if getattr(state, "llm", None) is None and not getattr(state, "_llm_tried", False):
+        state._llm_tried = True
+        try:
+            from ..llm import build_llm_client
+
+            state.llm = build_llm_client(state.config)
+        except Exception:  # pragma: no cover - never abort on LLM discovery
+            log.exception("LLM client discovery failed")
+            state.llm = None
+    return getattr(state, "llm", None)
+
+
 def _voice_info(state) -> dict:
     """Report which local voice/style options exist, *without* audio values."""
     engine = get_tts_engine(state)
@@ -133,6 +155,18 @@ def _voice_info(state) -> dict:
         "default_voice": getattr(engine, "_voice", None),
         "styles": style_names(),
     }
+
+
+def _vision_info(state) -> dict:
+    """Report the configured vision model *without* probing the server (a probe is
+    the orchestrator's background job, not the page-load path). ``installed`` is
+    True when the ``[vision]`` extra is present so the reader can enhance
+    explanations; the live availability is resolved lazily by the orchestrator."""
+    from ..llm import resolve_model
+
+    client = get_llm_client(state)
+    installed = client is not None and getattr(client, "name", "null") != "null"
+    return {"installed": installed, "model": resolve_model(state.config)}
 
 
 # --------------------------------------------------------------------------- #

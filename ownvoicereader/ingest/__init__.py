@@ -12,7 +12,12 @@ from ..model import ReadingDocument
 from .pdf_source import PdfSource, open_pdf, DocumentMetadata
 from .text_extractor import Line, extract_lines, flag_sparse_pages, extract
 from .reading_order import order_lines
-from .figure_table import add_figure_table_blocks, extract_tables, extract_figures
+from .figure_table import (
+    add_figure_table_blocks,
+    extract_tables,
+    extract_figures,
+    render_region,
+)
 
 __all__ = [
     "PdfSource",
@@ -26,6 +31,7 @@ __all__ = [
     "extract_tables",
     "extract_figures",
     "add_figure_table_blocks",
+    "render_region",
     "build_document",
 ]
 

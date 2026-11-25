@@ -43,11 +43,13 @@ audio smoke test). What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🟡 **M2** figures & tables: **figure crops + table grids + the "right-moment"
-  explanation are in** — at each `Fig. 3` / `Table 2(b)`'s *first textual
-  reference* the reader now speaks a short **caption+context** summary (LLM-free,
-  A2 base). Grid summaries for tables (C3) and an optional **vision** enhancement
-  (`M2.5`, `lfm3-vl:2b` via the `ollama` library) are next.
+- 🟢 **M2 + M2.5** figures & tables + **vision**: at each `Fig. 3` / `Table 2(b)`'s
+  *first textual reference* the reader speaks a short explanation. With a local
+  vision model (`lfm3-vl:2b` via the `ollama` library, the `[vision]` extra) it
+  describes **what the figure shows** and **what the table's data means**; without
+  one it falls back to a clean **caption+context** summary (A2 base). Vision is
+  computed in the background at load, so it's ready by the reference and the read is
+  never blocked. A text-only table grid summary (C3) remains an optional extra.
 - 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
 - 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
@@ -122,6 +124,26 @@ voice is present, the app still runs — it just reports the voice as
 
 > Audio output for the **headless** path uses **`aplay`** (ALSA) when
 > `--playback system`; a missing audio device is handled gracefully.
+
+### 5. (Optional) Vision LLM — figure/table explanations (M2.5)
+
+When a vision model is present, the reader describes **what a figure shows** and
+**what a table's data means** at its first reference, computed in the background.
+It talks to a **local Ollama** server via the `ollama` library (the `[vision]`
+extra); nothing leaves the machine.
+
+```bash
+pip install -e ".[vision]"        # adds the `ollama` library (core stays light)
+ollama pull lfm3-vl:2b           # the default vision model (small, ~1.5 GB)
+# Ollama's server must be running; point the app at a non-default host with:
+#   export OLLAMA_HOST=http://127.0.0.1:11434   # (the default) — or another server
+# pick a different model with:  ownvoicereader paper.pdf --llm llama3.2-vision
+```
+
+If no vision model is available, the app still runs and explains figures/tables
+from their **caption + context** instead (the A2 base) — no crash, no stall.
+The model is chosen via `--llm` / `OWNVOICEREADER_LLM_MODEL` and the server via
+`OLLAMA_HOST`, both read from the OS environment and **never persisted** (A6).
 
 ---
 
@@ -233,7 +255,8 @@ Environment variables (prefix `OWNVOICEREADER_`):
 | `OWNVOICEREADER_PORT` | `6767` | bind port (`0` = a random free port) |
 | `OWNVOICEREADER_PLAYBACK` | `browser` | `browser` (HTML5) / `system` (aplay) / `null` |
 | `OWNVOICEREADER_LOCAL_ONLY` | `true` | forbid cloud egress |
-| `OWNVOICEREADER_LLM_MODEL` | — | e.g. `ollama/qwen3:8b` (used from M2) |
+| `OWNVOICEREADER_LLM_MODEL` | `lfm3-vl:2b` | vision/LLM model on local Ollama (M2.5); `--llm` overrides |
+| `OLLAMA_HOST` | `http://localhost:11434` | the Ollama server (a different one can be pointed at) |
 | `OWNVOICEREADER_VOICE` | `en_US-lessac-medium` | Piper voice id |
 | `OWNVOICEREADER_STYLE` | `academic-calm` | TTS style preset |
 | `OWNVOICEREADER_VOICE_DIR` | `~/.cache/ownvoicereader/voices` | Piper voice dir |

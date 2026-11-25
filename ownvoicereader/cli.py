@@ -46,7 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--director", action="store_true",
                    help="let the LLM place figure/table explanations (else: first textual reference)")
     p.add_argument("--llm", dest="llm_model", default=None,
-                   help="LLM model id (e.g. 'ollama/qwen3:8b' or 'openai/gpt-4o-mini')")
+                   help="vision/LLM model id on your local Ollama (e.g. 'lfm3-vl:2b', "
+                        "'llama3.2-vision'); default 'lfm3-vl:2b'. Server via OLLAMA_HOST.")
     p.add_argument("--voice", default=None, help="TTS voice id")
     p.add_argument("--style", choices=["academic-calm", "quick-scan", "narrative", "lecture"],
                    default=None, help="reader style preset")

@@ -51,6 +51,9 @@ class ServerState:
     # Shared local TTS engine (built lazily, cached).
     tts: object = None
     _tts_tried: bool = False
+    # Shared local LLM/vision client (built lazily, cached). M2.5.
+    llm: object = None
+    _llm_tried: bool = False
 
 
 def _free_port(host: str) -> int:
@@ -150,7 +153,7 @@ def _run_headless(config: Config) -> int:
     player, and prints a short transcript + summary to stdout. Returns the
     number of cues spoken.
     """
-    from .api import load_document_by_path
+    from .api import load_document_by_path, get_llm_client
     from ..reader.orchestrator import Orchestrator
     from ..voice import build_player
 
@@ -167,11 +170,13 @@ def _run_headless(config: Config) -> int:
 
     doc = state.document
     tts = get_tts_engine(state)
+    llm = get_llm_client(state)
     player = build_player(config)
-    orch = Orchestrator(doc, tts, config)
-    log.info("headless read: %d cue(s), engine=%s, style=%s",
+    orch = Orchestrator(doc, tts, config, llm=llm)
+    log.info("headless read: %d cue(s), engine=%s, style=%s, vision=%s",
              orch.n, tts.name if tts else "none",
-             (config.style or "academic-calm"))
+             (config.style or "academic-calm"),
+             getattr(llm, "name", "none"))
 
     spoken = 0
     import asyncio

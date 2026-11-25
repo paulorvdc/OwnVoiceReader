@@ -259,10 +259,11 @@ class Orchestrator:
     """Playback state machine over a document's cues."""
 
     def __init__(self, doc: ReadingDocument, tts: Optional[TtsEngine],
-                 config=None, scope=None):
+                 config=None, scope=None, llm=None):
         self.doc = doc
         self.tts = tts
         self.config = config
+        self.llm = llm
         self.cues, self.sections = _build(doc, config, scope)
         self.n = len(self.cues)
         self.pos = 0
@@ -280,10 +281,45 @@ class Orchestrator:
         # speak *immediately after* that cue; ``_pending_explain`` holds the ones
         # queued by a just-played cue, emitted ahead of the next text cue so the cue
         # playhead (and thus navigation) is untouched. The composer is the A2
-        # caption+context base; M2.5 layers vision on top.
+        # caption+context base; M2.5 layers vision on top (below).
         self.reference_index = build_index(doc.blocks)
         self.explain_schedule = build_explain_schedule(self.cues, doc.blocks, self.reference_index)
         self._pending_explain: deque[ExplainItem] = deque()
+        # M2.5: a vision LLM (if any) enhances each item's explanation in the
+        # background, so by the time the reader reaches the reference the
+        # description is usually ready; if not, the A2 base is spoken.
+        if llm is not None:
+            self._start_vision()
+
+    # --- M2.5 vision ----------------------------------------------------- #
+    def _start_vision(self) -> None:
+        """Enhance each scheduled explanation with a vision description, in a
+        background thread, so the slow LLM call never blocks the first cue.
+
+        The thread links each figure/table to its media block (pixels / grid),
+        runs the vision precompute, and caches the result on the shared
+        :class:`ExplainItem`s. The main loop reads ``item.text`` at fire time, so
+        an item is spoken with whatever is ready — the A2 base, or the vision
+        description once the thread has filled it in. A failure is swallowed (the
+        read continues on the base).
+        """
+        import threading
+
+        from ..llm.explainer import Explainer, link_media
+
+        media = link_media(self.doc.blocks)
+        explainer = Explainer(self.llm, self.config)
+
+        def _run() -> None:
+            try:
+                explainer.precompute(self.explain_schedule, media, doc=self.doc)
+            except Exception:  # a vision failure must never take down the read
+                log.exception("vision precompute failed")
+
+        self._vision_thread = threading.Thread(
+            target=_run, name="vision-precompute", daemon=True,
+        )
+        self._vision_thread.start()
 
     # --- introspection --------------------------------------------------- #
     @property

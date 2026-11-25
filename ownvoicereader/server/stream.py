@@ -45,7 +45,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..model import ReadingEvent, ReadingEventType
 from ..reader.orchestrator import Orchestrator
-from .api import get_tts_engine
+from .api import get_tts_engine, get_llm_client
 
 log = logging.getLogger("ownvoicereader.stream")
 
@@ -79,7 +79,9 @@ async def _produce_and_send(ws: WebSocket, orch: Orchestrator) -> None:
 
 
 def _make_orchestrator(state) -> Orchestrator:
-    """Build a per-connection orchestrator over the shared document + TTS."""
+    """Build a per-connection orchestrator over the shared document + TTS, with
+    the shared vision client (M2.5) so figure/table explanations are enhanced in
+    the background when a vision model is available."""
     tts = get_tts_engine(state)
     doc = state.document
     if doc is None:
@@ -88,7 +90,7 @@ def _make_orchestrator(state) -> Orchestrator:
         from ..model import ReadingDocument
 
         doc = ReadingDocument()
-    return Orchestrator(doc, tts, state.config)
+    return Orchestrator(doc, tts, state.config, llm=get_llm_client(state))
 
 
 def build_stream_router(state) -> APIRouter:

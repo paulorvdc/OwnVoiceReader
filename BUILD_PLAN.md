@@ -241,13 +241,13 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > closed.** Moving to M2 (figures/tables). Hard-refresh `Ctrl+Shift+R` to pick up the JS change
 > when you next open the reader._
 
-### M2 — Figures & tables  _status: [~] C1 + C4 + C2 done · C3 (grid summary) + M2.5 (vision) next_
-- [x] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables→grid+bbox) + `get_pixmap(clip=…)` (figures→PNG+bbox); de-dup + min-size; append FIGURE/TABLE blocks
+### M2 — Figures & tables  _status: [~] C1 + C4 + C2 + M2.5 (vision) done · C3 (text-only grid summary) optional_
+- [x] `ingest/figure_table.py` — **PyMuPDF** `find_tables()` (tables→grid+bbox) + `get_pixmap(clip=…)` (figures→PNG+bbox); de-dup + min-size; append FIGURE/TABLE blocks; `render_region` (M2.5)
 - [x] `reader/references.py` — detect `Fig. 3 / Figure 3 / Fig. 3a / Table 2(b) / Tbl. 2 / TABLE I`; build reference index; **`caption_target` now trims a merged caption+body block to its caption sentence(s)** (C2)
-- [x] `reader/timeline.py` — **"right-moment"** engine (A7): fire an `EXPLAIN` at each figure/table's *first prose reference*; caption+context composer (A2 base, LLM-free)
-- [x] orchestrator emits + speaks `EXPLAIN` events (pending-queue, navigation-safe)
-- [ ] `llm/explainer.py` — table→**grid summary**; *spoken*, short, no LaTeX/markdown (figure vision is M2.5)
-- [ ] `llm/client.py` — **`ollama` library** → local Ollama `/api/chat` (no litellm, no httpx); streaming; vision inputs (M2.5)
+- [x] `reader/timeline.py` — **"right-moment"** engine (A7): fire an `EXPLAIN` at each figure/table's *first prose reference*; composer prefers a **vision** phrase, else the A2 caption+context base
+- [x] orchestrator emits + speaks `EXPLAIN` events (pending-queue, navigation-safe); **starts a background vision-precompute thread** (M2.5)
+- [x] `llm/explainer.py` — vision **figure** description + **table meaning** (rendered region + grid text); *spoken*, short, no LaTeX/markdown (M2.5)
+- [x] `llm/client.py` — **`ollama` library** → local Ollama `/api/chat` (no litellm, no httpx); streaming; vision inputs; user-configurable host (M2.5)
 > 📝 comment: _**C1 (reference detection + index) and C4 ("right-moment" engine)
 > are done + verified.** `reader/references.py` builds a `ReferenceIndex` — one
 > entry per figure/table with its **caption**, the reading-order position of its
@@ -286,22 +286,72 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > (option **b**) is shipped now — it's LLM-free, so the timing is testable without
 > a model. `lfm3-vl:2b` is pulled and wired in M2.5 as the optional enhancement._
 
-### M2.5 — Vision LLM through ollama python library  _status: [ ] not started_
-- [ ] using `lfm3-vl:2b` as the default model add the optional vision description into the caption + context design whenever this or another config vision model is available on that machine. make sure
-- [ ] make sure the vlm can also explain meaning from tables
-- [ ] try and calculate vlm explanations in the background (when indexing) and serve them at the appropriate time
-- [ ] use client and then chat so that a different ollama server can be configured by the user
+### M2.5 — Vision LLM through ollama python library  _status: [x] done · listenable_
+- [x] using `lfm3-vl:2b` as the default model add the optional vision description into the caption + context design whenever this or another config vision model is available on that machine. make sure
+- [x] make sure the vlm can also explain meaning from tables
+- [x] try and calculate vlm explanations in the background (when indexing) and serve them at the appropriate time
+- [x] use client and then chat so that a different ollama server can be configured by the user
 - [x] update pyproject.toml without litellm and pdfplumber. also move piper-tts with the voice installation into the core dependencies. ollama should be in vision.
 > 📝 comment: _**pyproject done (2026-11-25):** dropped `litellm`/`httpx`/`pdfplumber`;
 > `piper-tts` moved into **core** deps; `ollama>=0.6` added to a new **`vision`** extra
 > (the LLM client, M2.5, talks to a local Ollama server via the `ollama` library). The
 > stale `litellm` comment in `config.py` and the `llm/__init__.py` docstring were also
 > cleaned. 69 tests still pass; the full import graph loads._
+>
+> _**M2.5 done + verified (2026-11-25).** New `llm/client.py` + `llm/explainer.py`.
+>
+> * **Client (A6, M2.5).** `llm/client.py` wraps the **`ollama`** Python library
+>   (`OllamaClient`) behind a small `LlmClient` interface (mirrors `voice/tts_engine.py`):
+>   `chat` (sync, with streaming), `describe(image, prompt)` (vision), `list_models`,
+>   `has_model`, `available` (cached reachability+model probe). A `NullLlmClient` is
+>   the graceful "vision off" state, and `build_llm_client(config)` returns the Ollama
+>   client when the `[vision]` extra is present, else the null one — so the reader
+>   degrades to the A2 base, never crashes. **Host is user-configurable**: `OLLAMA_HOST`
+>   (or a `--llm` model) is read from the OS env, never persisted (A6). The `ollama`
+>   import is *lazy*, so a core install (no `[vision]`) still imports the module.
+> * **Explainer (vision for figures + meaning for tables).** `llm/explainer.py`:
+>   `link_media(blocks)` pairs each figure/table **block** (its pixels / grid) with
+>   its caption's target by same-page proximity (the C2-deferred "type-aware matching",
+>   done now because *vision* needs the pixels; cross-page floats stay unlinked → A2
+>   fallback). `Explainer.describe` sends the **figure image** to the VLM; for a
+>   **table** it sends the *rendered region* **and** the cell grid as text, so the
+>   model explains the table's *meaning*. `Explainer.precompute` fills every scheduled
+>   `ExplainItem.vision` (recomposing `item.text` via `compose_explanation`, which now
+>   **prefers the vision phrase over the A2 caption**).
+> * **Background, serve-at-the-moment (A7).** The orchestrator starts a **daemon
+>   thread** at load time that runs `precompute` for the whole paper, so by the time
+>   the reader reaches a reference the description is usually ready; if not (vision
+>   off / slow / down) the A2 caption+context is spoken — the read is never silent or
+>   blocked. The vision phrase is tidied (`_clean_vision`) to drop a redundant
+>   "this figure shows…" so "Figure 3, a pipeline of three stages…" flows.
+> * **Wiring.** `get_llm_client(state)` (cached, like `get_tts_engine`) feeds both the
+>   web (`_make_orchestrator`) and headless (`_run_headless`) paths; `/api/info` now
+>   reports `{installed, model}` so the UI can show vision status (M7).
+>
+> * **Calibration (all 4 samples, real `lfm3-vl:2b` listenable):** vision now
+>   enhances the bulk of explanations — **SBC 4/6, IEEE 9/10, ACM 2/2, Springer 2/3**
+>   captioned entries get a spoken description; the rest fall back to the (now clean)
+>   A2 base. e.g. *"Table 1, various graph-embedding and ranking methods—DeepWalk,
+>   Node2Vec, Metapath2Vec, … across four evaluation categories"* and *"Figure 1, a
+>   heterogeneous event network drawn as a graph, in which the large black nodes
+>   represent events and are connected to one another"*. A concatenated vision clip is
+>   at `/tmp/opencode/m25_vision_demo.wav`.
+>
+> * **Tests:** 15 in `tests/test_llm_client.py` (hermetic + live-server, skipped
+>   when no server) + 18 in `tests/test_llm_explainer.py` → **114 pass total.**
+>
+> _**Known limitations (→ later):** a captionless / cross-page-float figure stays on
+> the A2 base (its caption is clean, so the spoken text is still fine); the vision
+> thread is *best-effort* (no bounded wait on the hot path) — a later milestone can
+> add a short "wait-for-vision" on the first cue if a user wants the enhanced text
+> guaranteed. Tables that are captionless (e.g. IEEE `TABLE I`) use the A2 reference
+> sentence for context but still get a vision description when linked._
 
 ### M3 — OCR (text/OCR interchangeable)  _status: [ ] not started_
 - [ ] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer
 - [ ] OCR emits the **same `Block` shape** as `text_extractor`
 - [ ] **parity test**: a scanned paper reads identically to a text-based one
+- [ ] maybe use the OCR to help confirm the table and figure captions limits
 > 📝 comment:
 
 ### M4 — Config & models  _status: [ ] not started_
@@ -329,7 +379,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ ] make a light UI with high contrast as default but give a dark high contrast option. also add a dracula theme
 - [ ] change to the now reading and transcript parts of the UI: text (particularly now reading) should have high contrast an larger for low-vision users (primary target of this tool). previous cues and forward cues should also show up similar the lyrics UI in Apple Music instead of the block system in place for previous milestones ![lyricsUI](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnxUzHYsARyk4-WAldA5Gc-DO6YlAn45W3kaIATVcuBryai1UxxX0iHHv_&s=10)
 - [ ] transcript block can stay next to the paper when screen space is afforded
-- [ ] show markdown version of table and the figure being explained whenever that's happening
+- [ ] show markdown version of table and the figure being explained whenever that's happening on the new transcript/now reading UI
 > 📝 comment:
 
 ### M8 — Packaging (later, post-v1)  _status: [ ] not started_
