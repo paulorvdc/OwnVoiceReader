@@ -17,8 +17,9 @@ open a PDF directly — that path exists for headless / CI use
 
 ## Status
 
-This is at **Milestone M1 — Text reader** (built 2026-11-24, awaiting your
-audio smoke test). What works today:
+This is at **Milestone M2 + M2.5** — figures/tables are explained at their first
+reference, with an **optional** local vision LLM (M0–M1 closed; M2.5 done and
+listenable). What works today:
 
 - ✅ `ownvoicereader` starts a local server (127.0.0.1, fixed default port
   **6767**) and opens your browser to a clean viewer.
@@ -33,6 +34,12 @@ audio smoke test). What works today:
   *academic-calm, quick-scan, narrative, lecture*).
 - ✅ **Headless read** — `ownvoicereader paper.pdf --auto --no-browser` speaks
   the whole paper to a system or null player (no browser needed).
+- ✅ **Optional vision** (M2.5) — with a local vision model (the `[vision]`
+  extra + `ollama pull lfm3-vl:2b`) each figure and table gets a short spoken
+  description of *what it shows* / *what its data means*; **without one the
+  reader runs fully** and explains figures/tables from their **caption + context**
+  instead (the A2 base) — it never stops, never goes silent. A status badge in the
+  viewer shows the state. See *(Optional) Vision LLM* below.
 - ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`) + a PDF byte endpoint
   (`/pdf`, with HTTP range support for large files) + a `/ws` transport for
   events + audio.
@@ -58,6 +65,12 @@ What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 - 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
 - 🔜 **M6** hardening: graceful LLM-down, resume checkpoint, more tests.
+- 🔜 **M7** UI revamp: a high-contrast, **low-vision-first** reader UI (a light
+  default, a dark high-contrast option, and a Dracula theme), a lyrics-style
+  now-reading / transcript, and the markdown of the table/figure being explained
+  shown alongside.
+- 🔜 **M8** packaging (post-v1): a cross-platform binary (`.exe` / AppImage /
+  `.dmg`) that opens its own window while keeping the web app.
 
 > **Voice engine:** M1 uses **Piper** as the local voice
 > (`en_US-lessac-medium`, 22050 Hz). espeak-ng was the plan's first choice but
@@ -131,23 +144,33 @@ voice is present, the app still runs — it just reports the voice as
 
 ### 5. (Optional) Vision LLM — figure/table explanations (M2.5)
 
-When a vision model is present, the reader describes **what a figure shows** and
-**what a table's data means** at its first reference, computed in the background.
-It talks to a **local Ollama** server via the `ollama` library (the `[vision]`
-extra); nothing leaves the machine.
+The vision LLM is **optional and non-essential** — it *enhances* each
+figure/table explanation with a short spoken description of **what a figure shows**
+and **what a table's data means**, computed in the background at load. The reader
+**does not depend on it and never stops or goes silent without it**: when no vision
+model is available it simply speaks the **caption + context** summary (the A2 base)
+instead — one code path, no crash, no stall. This is the behavior that is coded:
+the `NullLlmClient` makes every vision call return empty, the composer falls back
+to the A2 base, and the vision work runs in a background *daemon* thread the
+reading loop never waits on — so the read is **never silent and never blocked**.
+
+When a vision model *is* present it talks to a **local Ollama** server via the
+`ollama` library (the `[vision]` extra); nothing leaves the machine.
+
+**Requirements to enable it** — every step is optional (skip all of them for a
+text-only read):
 
 ```bash
-pip install -e ".[vision]"        # adds the `ollama` library (core stays light)
-ollama pull lfm3-vl:2b           # the default vision model (small, ~1.5 GB)
-# Ollama's server must be running; point the app at a non-default host with:
-#   export OLLAMA_HOST=http://127.0.0.1:11434   # (the default) — or another server
+pip install -e ".[vision]"        # 1. add the `ollama` library (core stays light)
+ollama pull lfm3-vl:2b           # 2. the default vision model (small, ~1.5 GB)
+# 3. Ollama's server must be running. Point the app at a non-default host with:
+#      export OLLAMA_HOST=http://127.0.0.1:11434   # (the default) — or another server
 # pick a different model with:  ownvoicereader paper.pdf --llm llama3.2-vision
+#   (or export OWNVOICEREADER_LLM_MODEL=llama3.2-vision)
 ```
 
-If no vision model is available, the app still runs and explains figures/tables
-from their **caption + context** instead (the A2 base) — no crash, no stall.
 The model is chosen via `--llm` / `OWNVOICEREADER_LLM_MODEL` and the server via
-`OLLAMA_HOST`, both read from the OS environment and **never persisted** (A6).
+`OLLAMA_HOST`; both are read from the OS environment and **never persisted** (A6).
 
 **The viewer shows a status badge** (next to the Piper voice badge) so you always
 know the vision state: a **green** chip naming the model in use
@@ -294,5 +317,7 @@ skips cleanly when no engine is present).
 
 ## Roadmap
 
-See `BUILD_PLAN.md` for the full milestone plan (M0–M7) and the locked design
-decisions (A1–A14). **v1 = M0–M6**; M7 (cross-platform binary) is deferred.
+See `BUILD_PLAN.md` for the full milestone plan (M0–M8) and the locked design
+decisions (A1–A14). **v1 = M0–M6**; **M7 (UI revamp, low-vision-first)** and
+**M8 (cross-platform binary)** are post-v1. The vision LLM (M2.5) is optional
+throughout — the reader runs fully without it (see *(Optional) Vision LLM*).
