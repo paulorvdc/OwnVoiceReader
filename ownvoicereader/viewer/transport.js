@@ -10,9 +10,13 @@
  *   - a WebSocket to /ws that streams reading events + WAV audio
  *   - an HTML5 <audio> element that plays the streamed audio (A9)
  *   - play / pause / stop + section & paragraph navigation controls
- *   - a "now reading" bar, a transcript, and auto page-scroll that follows the
+ *   - a "now reading" follow-along panel (a lyrics-style transcript — Apple-Music
+ *     style: the cue being heard enlarged + high-contrast in the middle, with the
+ *     neighbouring cues dimmed around it) + auto page-scroll that follows the
  *     text being spoken (the cue's page). M5 C1 scrapped the PDF overlay
- *     highlight; C3/C4 will add a transcript-based follow-along instead.
+ *     highlight; C3/C4 replaced the old bar + toggleable block with this lyrics
+ *     panel, which sits to the right of the paper when the window is wide and
+ *     collapses to a single bottom line when it is not.
  */
 (function () {
   "use strict";
@@ -52,11 +56,9 @@
     // M4: the Ollama host input + the "Refresh models" button (re-point + re-probe).
     ollamaHost: $("ollama-host"),
     refreshModels: $("refresh-models"),
-    nowReading: $("now-reading"),
-    nowText: $("now-text"),
     nowSection: $("now-section"),
-    transcript: $("transcript"),
-    transcriptToggle: $("transcript-toggle"),
+    lyricsList: $("lyrics-list"),
+    lyricsNow: $("lyrics-now"),
     themeBtn: $("theme-btn"),
     audioOut: $("audio-out"),
   };
@@ -108,14 +110,12 @@
     el.landing.classList.remove("hidden");
     el.reader.classList.add("hidden");
     el.controls.classList.add("hidden");
-    el.nowReading.classList.add("hidden");
   }
 
   function showReader() {
     el.landing.classList.add("hidden");
     el.reader.classList.remove("hidden");
     el.controls.classList.remove("hidden");
-    el.nowReading.classList.remove("hidden");
   }
 
   function renderDocInfo(info) {
@@ -515,7 +515,7 @@
       el.btnPlay.textContent = "▶";
       this.setProgress(this.cueCount, this.cueCount);
       setStatus("finished reading", "ok");
-      el.nowText.textContent = "— end of reading —";
+      el.lyricsNow.textContent = "— end of reading —";
     }
 
     onState(s) {
@@ -565,7 +565,7 @@
         this.queue.length = 0;
         this.waitingForCue = false;
         el.btnPlay.textContent = "▶";
-        el.nowText.textContent = "stopped — ready to play from the start";
+        el.lyricsNow.textContent = "stopped — ready to play from the start";
         this.setProgress(0, this.cueCount);
       } else if (s.state === "paused") {
         this.playing = false;
@@ -836,21 +836,22 @@
       const line = document.createElement("div");
       line.className = "line" + (cls ? " " + cls : "");
       line.textContent = text;
-      el.transcript.appendChild(line);
+      el.lyricsList.appendChild(line);
       // keep the transcript from growing unbounded
-      while (el.transcript.children.length > 400) el.transcript.removeChild(el.transcript.firstChild);
+      while (el.lyricsList.children.length > 400) el.lyricsList.removeChild(el.lyricsList.firstChild);
       return line;
     }
 
-    // M5 C1: the single place "now reading" is driven — the now-reading text, the
-    // section chip, the cue counter, the auto page-scroll, and the transcript's
-    // current line, all keyed to the cue that is being *heard*. Called at playback
-    // start (pump) for cues with audio, and at event arrival for cues that produce
-    // no sound. `updateText` is false for a notice (keep "now reading" on the last
-    // *spoken* cue while its position still advances).
+    // M5 C1/C3: the single place "now reading" is driven — the current-cue text
+    // (shown large + high-contrast in the lyrics list, and as the single bottom
+    // line when the window is narrow), the section chip, the cue counter, the auto
+    // page-scroll, and the lyrics current line — all keyed to the cue that is being
+    // *heard*. Called at playback start (pump) for cues with audio, and at event
+    // arrival for cues that produce no sound. `updateText` is false for a notice
+    // (keep "now reading" on the last *spoken* cue while its position still advances).
     _setNowReading(ev, lineEl, updateText = true) {
       if (!ev) return;
-      if (updateText) el.nowText.textContent = ev.text || "…";
+      if (updateText) el.lyricsNow.textContent = ev.text || "…";
       if (ev.meta) {
         // Live cue counter + "now reading" section chip (M1.5 checkpoint 2): the
         // counter advances as each cue is *spoken*, not only on a pause.
@@ -869,13 +870,26 @@
     }
 
     _markCurrentLine(lineEl) {
-      const prev = el.transcript.querySelector(".line.current");
+      const prev = el.lyricsList.querySelector(".line.current");
       if (prev && prev !== lineEl) prev.classList.remove("current");
       lineEl.classList.add("current");
-      // Keep the line being heard in view (scrolls the transcript only when the
-      // current line is off-screen; a no-op while the transcript is closed).
-      if (el.transcript.classList.contains("open")) {
-        lineEl.scrollIntoView({ block: "nearest" });
+      // M5 C3: keep at most 3 previous cues above the current — once a 4th would
+      // appear, the cue said *first* drops out of the UI (removed from the DOM), so
+      // the follow-along stays a tight window (≈3 prev · current · a few next)
+      // rather than a growing transcript. `kids` is a live collection, so removing
+      // from the front always drops the oldest; the current + forward cues (after it)
+      // are never touched.
+      const kids = el.lyricsList.children;
+      const drop = Array.prototype.indexOf.call(kids, lineEl) - 3;
+      for (let i = 0; i < drop; i++) el.lyricsList.removeChild(kids[0]);
+      // Center the current cue in the scrolling lyrics list (the wide layout).
+      // In the narrow bottom-line layout the list is display:none (clientHeight 0),
+      // so this is a no-op there and only the single #lyrics-now line shows.
+      if (el.lyricsList.clientHeight > 0) {
+        const listRect = el.lyricsList.getBoundingClientRect();
+        const lineRect = lineEl.getBoundingClientRect();
+        el.lyricsList.scrollTop +=
+          (lineRect.top - listRect.top) - (el.lyricsList.clientHeight - lineEl.clientHeight) / 2;
       }
     }
   }
@@ -891,9 +905,9 @@
       } catch (_) {}
       reader = null;
     }
-    // Reset the transcript + "now reading" for the new document.
-    el.transcript.innerHTML = "";
-    el.nowText.textContent = "…";
+    // Reset the lyrics panel for the new document.
+    el.lyricsList.innerHTML = "";
+    el.lyricsNow.textContent = "…";
     if (el.nowSection) el.nowSection.textContent = "";
     reader = new Reader();
     reader.connect();
@@ -991,10 +1005,9 @@
     // it reuses the landing's hidden file input + the uploadFile → onDocument
     // flow, which tears down the old reader/WS and loads the new document.
     el.changePdf.addEventListener("click", () => el.fileInput.click());
-    el.transcriptToggle.addEventListener("click", () => {
-      const open = el.transcript.classList.toggle("open");
-      el.transcriptToggle.textContent = open ? "transcript ▴" : "transcript ▾";
-    });
+    // M5 C3/C4: the old transcript toggle is gone — the follow-along is an always-on
+    // lyrics panel (a side panel when the window is wide, a single bottom line when
+    // it is narrow); it has no expand/collapse control.
     // M5 C2: sync the button to whatever scheme the inline head script already
     // applied to <html>, then cycle light → dark → Dracula on click (persisted).
     if (el.themeBtn) {

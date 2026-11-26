@@ -115,7 +115,7 @@
     }
 
     /* Reader */
-    #pdf-wrap { display: grid; place-items: start center; padding: 16px; }
+    #pdf-wrap { display: grid; place-items: start center; padding: 16px; flex: 1 1 auto; min-width: 0; overflow: auto; }
     #pdf-canvas {
       display: block;
       background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.5);
@@ -156,36 +156,80 @@
     .progress { font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; color: var(--fg-dim); }
     .m1-note { color: var(--warn); font-size: 11px; }
 
-    /* "Now reading" bar */
-    #now-reading {
-      padding: 8px 16px; border-top: 1px solid var(--border);
-      background: var(--bg-card); font-size: 14px; color: var(--fg);
-      min-height: 30px; display: flex; align-items: center; gap: 10px;
+    /* Reader layout: the PDF on the left, the "now reading" follow-along panel on
+       the right when the window is wide enough (M5 C4). */
+    #reader { display: flex; flex-direction: row; min-height: 0; overflow: hidden; }
+
+    /* M5 C3/C4: the "now reading" panel is a lyrics-style follow-along transcript
+       (Apple-Music style) — the cue being heard is enlarged + high-contrast in the
+       middle, with the neighbouring cues dimmed + smaller around it. The low-vision
+       user is the primary target, so the current line is large + high-contrast.
+       It is a rounded, slightly-elevated card floating in the right of the reader
+       with a margin all round — thicker on the right, so it sits more centrally
+       rather than hugging the edge. */
+    #lyrics {
+      flex: 0 0 420px; margin: 16px 40px 16px 16px;
+      display: flex; flex-direction: column; min-height: 0;
+      border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+      background: var(--bg-elev); box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
     }
-    #now-reading .label { color: var(--accent); font-weight: 600; white-space: nowrap; }
-    #now-reading .section {
-      flex: 0 0 auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    .lyrics-head {
+      display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+      padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev);
+    }
+    .lyrics-head .label { color: var(--accent); font-weight: 600; font-size: 12px; white-space: nowrap; }
+    .lyrics-head .section {
+      flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       background: var(--accent-dim); color: var(--accent);
       padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;
     }
-    #now-reading .section:empty { display: none; }
-    #now-reading .text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-    /* Transcript panel */
-    #transcript-toggle { font-size: 12px; padding: 3px 10px; }
-    #transcript {
-      max-height: 0; overflow-y: auto; border-top: 1px solid var(--border);
-      background: var(--bg); transition: max-height .2s;
+    .lyrics-head .section:empty { display: none; }
+    /* Wide layout: a scrolling window of cues; the current one is enlarged +
+       high-contrast and centred, the neighbours dimmed + smaller. */
+    .lyrics-list {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 0; text-align: center;
     }
-    #transcript.open { max-height: 38vh; }
-    #transcript .line { padding: 3px 16px; font-size: 13px; color: var(--fg-dim); }
-    #transcript .line.current { color: var(--fg); background: var(--accent-dim); }
-    #transcript .line.notice { color: var(--warn); font-style: italic; }
+    .lyrics-list .line {
+      padding: 6px 18px; font-size: 15px; line-height: 1.5; color: var(--fg-dim);
+    }
+    .lyrics-list .line.current {
+      font-size: 24px; font-weight: 600; color: var(--fg);
+      background: var(--accent-dim); border-radius: 8px; margin: 2px 10px; padding: 12px 18px;
+    }
     /* M2.5: a figure/table explanation is a side-note the reader diverts to — the
        body reads as an italic aside; the spoken markers ("Now, a closer look…" /
        "Back to the text.") are accented + bold so they stand out. */
-    #transcript .line.explain { font-style: italic; }
-    #transcript .line.explain-marker { color: var(--accent); font-weight: 600; }
+    .lyrics-list .line.notice { color: var(--warn); font-style: italic; }
+    .lyrics-list .line.explain { font-style: italic; }
+    .lyrics-list .line.explain-marker { color: var(--accent); font-weight: 600; }
+    /* The single-line current cue, shown only in the collapsed (narrow) layout. */
+    .lyrics-now { display: none; }
+    /* C4: as the window narrows, the card's margins collapse FIRST — the thick
+       right gap goes first, then the rest — so the side panel keeps as much width
+       as possible, and only when there is genuinely no room for it does it drop to
+       a single line across the bottom (with no way to enlarge it). */
+    @media (max-width: 1120px) {
+      /* the thick right margin collapses first */
+      #lyrics { margin-right: 16px; }
+    }
+    @media (max-width: 1000px) {
+      /* the remaining margins go too — the card is now flush to the edges */
+      #lyrics { margin: 0; }
+    }
+    @media (max-width: 900px) {
+      #reader { flex-direction: column; }
+      #lyrics {
+        flex: 0 0 auto; width: 100%; margin: 0;
+        border: none; border-top: 1px solid var(--border);
+        border-radius: 0; box-shadow: none;
+      }
+      .lyrics-head { display: none; }
+      .lyrics-list { display: none; }
+      .lyrics-now {
+        display: block; padding: 10px 14px; font-size: 18px; color: var(--fg);
+        font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+    }
 
     /* Status line */
     .status {
@@ -229,11 +273,22 @@
     </div>
   </section>
 
-  <!-- Reader -->
+  <!-- Reader: the PDF on the left; the "now reading" follow-along panel
+       (a lyrics-style transcript — Apple-Music style) sits to the right when the
+       window is wide enough, and collapses to a single bottom line when it isn't
+       (M5 C3/C4). -->
   <section id="reader" class="screen hidden">
     <div id="pdf-wrap">
       <canvas id="pdf-canvas"></canvas>
     </div>
+    <aside id="lyrics" aria-label="Now reading — follow-along transcript">
+      <div class="lyrics-head">
+        <span class="label">NOW READING</span>
+        <span class="section" id="now-section" title="current section"></span>
+      </div>
+      <div id="lyrics-list" class="lyrics-list"></div>
+      <div id="lyrics-now" class="lyrics-now">…</div>
+    </aside>
   </section>
 
   <!-- Control bar (shown once a document is loaded) -->
@@ -283,14 +338,8 @@
     </div>
   </footer>
 
-  <!-- "Now reading" + transcript -->
-  <div id="now-reading" class="hidden">
-    <span class="label">NOW READING</span>
-    <span class="section" id="now-section" title="current section"></span>
-    <span class="text" id="now-text">…</span>
-    <button id="transcript-toggle" title="Toggle transcript">transcript ▾</button>
-  </div>
-  <div id="transcript"></div>
+  <!-- The "now reading" follow-along now lives inside the reader (the #lyrics
+       panel above), not as a separate bar + toggleable block (M5 C3/C4). -->
 
   <div id="status" class="status">starting…</div>
 
