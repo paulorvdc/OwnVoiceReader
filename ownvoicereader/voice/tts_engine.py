@@ -15,7 +15,7 @@ Engines
 
 Both return **WAV bytes** so the browser can play them with a plain HTML5
 ``<audio>`` element (A9). Engines that cannot run report ``available = False``
-instead of raising, so the orchestrator can degrade gracefully (M6) and show a
+instead of raising, so the orchestrator can degrade gracefully and show a
 notice.
 """
 

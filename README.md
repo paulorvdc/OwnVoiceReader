@@ -3,8 +3,8 @@
 > **your model, your voice, your machine.**
 
 OwnVoiceReader is a lightweight **local web app** that renders an academic PDF,
-lets you read the **whole paper or a selection** (sections / a text range /
-specific figures & tables) aloud in a chosen **voice + style**, and uses
+lets you read the **whole paper** (jumping between its **sections**) aloud in a
+chosen **voice + style**, and uses
 **your LLM** (local Ollama or a cloud provider you opt into) to explain
 figures and tables **at the right moment**. Text and scanned (OCR) PDFs are
 handled interchangeably.
@@ -83,14 +83,13 @@ listenable. What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🔜 **M5** selection: sections / text range / specific figures-tables.
-- 🔜 **M6** hardening: graceful LLM-down, resume checkpoint, more tests.
-- 🔜 **M7** UI revamp: a high-contrast, **low-vision-first** reader UI (a light
+- 🔜 **M5** UI revamp: a high-contrast, **low-vision-first** reader UI (a light
   default, a dark high-contrast option, and a Dracula theme), a lyrics-style
   now-reading / transcript, and the markdown of the table/figure being explained
   shown alongside.
-- 🔜 **M8** packaging (post-v1): a cross-platform binary (`.exe` / AppImage /
-  `.dmg`) that opens its own window while keeping the web app.
+- 🔜 **M6** packaging (post-v1): **hardening first** (error handling + more tests, a
+  guided install for the core + optional extras), then a cross-platform binary
+  (`.exe` / AppImage / `.dmg`) that opens its own window while keeping the web app.
 
 > **Voice engine:** M1 uses **Piper** as the local voice
 > (`en_US-lessac-medium`, 22050 Hz). espeak-ng was the plan's first choice but
@@ -255,7 +254,7 @@ never crashes). Point it elsewhere with `OWNVOICEREADER_CONFIG=path/to/config.ya
 
 The file holds only *durable settings* — `host`, `port`, `open_browser`,
 `local_only`, `playback`, `director`, `llm_provider`, `llm_model`, `ollama_host`,
-`voice`, `style`. Per-run arguments (`pdf_path`, `checkpoint_path`) are never
+`voice`, `style`. The per-run `pdf_path` argument is never
 written, and **no secrets are ever persisted** (A6) — provider keys stay in the OS
 environment. A host *endpoint* (`ollama_host`) is not a secret, so it is saved.
 A sample:
@@ -449,7 +448,7 @@ host endpoint still is).
 
 ## Roadmap
 
-See `BUILD_PLAN.md` for the full milestone plan (M0–M8) and the locked design
-decisions (A1–A14). **v1 = M0–M6**; **M7 (UI revamp, low-vision-first)** and
-**M8 (cross-platform binary)** are post-v1. The vision LLM (M2.5) is optional
+See `BUILD_PLAN.md` for the full milestone plan (M0–M6) and the locked design
+decisions (A1–A13). **v1 = M0–M5**; **M6 (packaging — hardening first, then the
+cross-platform binary)** is post-v1. The vision LLM (M2.5) is optional
 throughout — the reader runs fully without it (see *(Optional) Vision LLM*).

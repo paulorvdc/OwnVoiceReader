@@ -29,7 +29,7 @@ Design mirrors :mod:`ownvoicereader.voice.tts_engine` and
     ``tesseract`` binary (word-level, grouped into lines).
   * :class:`NullOcrEngine` — the graceful "OCR is off" state: reports
     unavailable and yields nothing, so the reader degrades to the text layer
-    instead of crashing (the M6 "feature-off" path).
+    instead of crashing (the graceful "feature-off" path).
   * :func:`build_ocr_engine` — the factory: the best available engine in the A4
     order (RapidOCR, then Tesseract), or a :class:`NullOcrEngine` if neither is
     installed.
@@ -242,7 +242,7 @@ class TesseractEngine(OcrEngine):
 # --------------------------------------------------------------------------- #
 class NullOcrEngine(OcrEngine):
     """OCR is not installed: report unavailable and yield nothing, so the reader
-    degrades to the text layer instead of crashing (the M6 "feature-off" path,
+    degrades to the text layer instead of crashing (the graceful "feature-off" path,
     the OCR analogue of :class:`NullLlmClient`)."""
 
     name = "null"

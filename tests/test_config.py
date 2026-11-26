@@ -34,7 +34,7 @@ def _args(**kw) -> argparse.Namespace:
     a = argparse.Namespace()
     for k in ("pdf_path", "host", "port", "no_browser", "local_only", "no_cloud",
               "playback", "auto", "director", "llm_model", "llm_provider",
-              "voice", "style", "resume"):
+              "voice", "style"):
         if k not in kw:
             setattr(a, k, None)
         else:
@@ -211,13 +211,12 @@ def test_no_credentials_are_ever_persisted(tmp_path, monkeypatch):
 # persistence: save / load round-trip
 # --------------------------------------------------------------------------- #
 def test_to_yaml_dict_skips_none_and_transient():
-    c = Config(llm_model="m", voice="v", pdf_path="p.pdf", checkpoint_path="c.json")
+    c = Config(llm_model="m", voice="v", pdf_path="p.pdf")
     d = c.to_yaml_dict()
     assert d["llm_model"] == "m"
     assert d["voice"] == "v"
     # transient per-run fields are never persisted
     assert "pdf_path" not in d
-    assert "checkpoint_path" not in d
     # the durable booleans are always explicit
     assert d["local_only"] is True
 

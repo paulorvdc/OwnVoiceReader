@@ -16,7 +16,7 @@ Design goals (BUILD_PLAN M2.5), kept deliberately simple:
     started at load time) and cached on the :class:`ExplainItem`, so by the time
     the reader reaches the reference the description is usually ready. If it is not
     — vision off, slow, or the server down — the reader speaks the A2 base: it is
-    **never silent and never blocked** (the graceful M6 "LLM-down" path).
+    **never silent and never blocked** (the graceful "LLM-down" path).
   * **Local** — nothing leaves the machine; the model and server are the user's.
 
 The explainer is *decoupled* from the firing mechanism (C4): it only fills

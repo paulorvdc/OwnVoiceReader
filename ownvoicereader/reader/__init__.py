@@ -1,8 +1,8 @@
 """Reader layer: the "right-moment" reading engine.
 
 M1 wires the text path end to end via :class:`Orchestrator` (cues + playback
-controls). M2 adds figure/table references and the EXPLAIN timeline; M5 adds
-section detection and scoped selection.
+controls). M2 adds figure/table references and the EXPLAIN timeline; M1.5 adds
+section-aware navigation (jumping between sections + spoken section names).
 """
 
 from .orchestrator import Orchestrator, Cue, build_cues

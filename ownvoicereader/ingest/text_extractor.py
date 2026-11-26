@@ -32,8 +32,8 @@ SPARSE_MIN_CHARS = 30
 class Line:
     """One line of text with its page-space geometry.
 
-    ``font_size`` and ``is_bold`` are captured so later milestones (M5 section
-    detection, M2 caption sniffing) can use typographic cues without re-parsing.
+    ``font_size`` and ``is_bold`` are captured so section detection (M1.5) and
+    caption sniffing (M2) can use typographic cues without re-parsing.
     ``source`` records *where the line came from* — the PDF's text layer (the
     default) or OCR (M3, for pages without a usable text layer) — so the same
     shape flows through ``reading_order`` for both and the origin is preserved

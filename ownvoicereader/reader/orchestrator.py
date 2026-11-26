@@ -14,7 +14,7 @@ Turns a :class:`ReadingDocument` into a spoken reading. It:
 The orchestrator is **transport-agnostic**: the browser path pulls cues from it
 over the WebSocket; the headless ``--auto`` path (:meth:`run_to_end`) feeds a
 system :class:`~ownvoicereader.voice.player.Player` instead. TTS failures are
-degraded to a :data:`NOTICE` event, not a crash (the M6 hardening path).
+degraded to a :data:`NOTICE` event, not a crash (graceful degradation).
 """
 
 from __future__ import annotations
@@ -614,7 +614,7 @@ class Orchestrator:
         scheduled for it is queued to speak next.
 
         Returns ``None`` only when the reading is finished *and* no explanation
-        is pending. On a TTS failure a text cue becomes a NOTICE (M6 path); a
+        is pending. On a TTS failure a text cue becomes a NOTICE (graceful degradation); a
         failed explanation is simply skipped (no NOTICE noise).
         """
         # 1) A pending explanation fires first (checked before done, so a

@@ -205,7 +205,7 @@ def _merge_into_blocks(column_lines: list[Line]) -> list[Block]:
         y0 = min(ln.y0 for ln in cur_lines)
         x1 = max(ln.x1 for ln in cur_lines)
         y1 = max(ln.y1 for ln in cur_lines)
-        # Typographic signal for section detection (M1.5/M5): a heading is the
+        # Typographic signal for section detection (M1.5): a heading is the
         # most *prominent* line in the block (largest font), and "bold" is taken
         # from the longest (main) line — a heading block is a single bold line, a
         # body block has no bold line.

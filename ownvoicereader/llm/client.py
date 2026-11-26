@@ -13,7 +13,7 @@ Design mirrors :mod:`ownvoicereader.voice.tts_engine`:
   * :class:`OllamaClient` — the real client, driving the ``ollama`` library.
   * :class:`NullLlmClient` — a no-op fallback when the library or server is
     unavailable, so the reader degrades to the A2 *caption+context* base instead
-    of crashing (graceful, the M6 "LLM-down" path).
+    of crashing (graceful, the "LLM-down" path).
   * :func:`build_llm_client` — the factory: returns the Ollama client when the
     ``[vision]`` extra is installed *and* a server answers for the configured
     model; otherwise ``None``.

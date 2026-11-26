@@ -2,7 +2,7 @@
 
 > **Tagline:** *your model, your voice, your machine.*
 > A lightweight **local web app** that renders an academic PDF, lets you read the
-> **whole paper or a selection** (sections / text range / specific figures-tables),
+> **whole paper** (jumping between its **sections**),
 > and reads it aloud in a chosen **voice + style** — using **your LLM** (cloud or
 > local Ollama) to explain figures and tables at the **right moment**. Handles
 > text **and** scanned (OCR) PDFs interchangeably.
@@ -19,7 +19,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - **Comment lines:** every `> 📝 comment:` is a blank space for your notes,
   objections, or a decision. Grep `📝 comment` to find them all.
 - **Decision lines** (Section 1) end in `- [ ] accept / - [ ] override`. Tick one.
-- **Legend for milestones:** `M0` skeleton → `M7` packaging. v1 = M0–M6.
+- **Legend for milestones:** `M0` skeleton → `M6` packaging. v1 = M0–M5.
 - **Single source of truth:** this file supersedes the earlier architecture
   sketch in `~/.opencode/plan/plan.md`.
 
@@ -64,7 +64,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ x] **A10 Section detection** — v1 = **font-size + numbering heuristics** (PyMuPDF font metadata + `§3.1` regex); LLM refine optional flag
   - [ x] accept  - [ ] override →
   > 📝 comment: fallback to llm
-- [x ] **A11 Packaging** — v1 = `pip install ownvoicereader` console script (`ownvoicereader`); true cross-platform **binary** (PyInstaller/Briefcase) deferred to M7
+- [x ] **A11 Packaging** — v1 = `pip install ownvoicereader` console script (`ownvoicereader`); true cross-platform **binary** (PyInstaller/Briefcase) deferred to M6
   - [ x] accept  - [ ] override →
   > 📝 comment: pip install yes; make setup.py; I handle distribution later
 - [ x] **A12 Headless/CI** — keep `ownvoicereader paper.pdf --auto --no-browser` (full auto-read to system audio, no UI)
@@ -73,16 +73,13 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ x] **A13 Server security** — bind **`127.0.0.1`** only, **fixed default port 6767** (0 = random free port, falls back to free if busy), `--local-only` forbids any cloud egress
   - [ x] accept  - [ ] override →
   > 📝 comment:
-- [ x] **A14 Resume** — JSON **checkpoint** of reading position so a paper can be reopened mid-read
-  - [ x] accept  - [ ] override →
-  > 📝 comment:
 
 ### 1.3 Open (your call — answer or skip)
 - [ x] **Dev OS / environment** — Linux now; cross-platform later? _(Linux assumed)_
   > 📝 comment: cross-platform wherever Python runs — Windows + Mac
 - [ x] **Local LLM now?** — will you have **Ollama** running for dev, or cloud-only first?
   > 📝 comment: local only first
-- [ x] **First sample paper** — which PDF do we validate reading-order + selection on?
+- [ x] **First sample paper** — which PDF do we validate reading-order on?
   > 📝 comment: test_pdfs/3799682.3840189.pdf
 - [x ] **Language** — English-only for v1, or multilingual from the start?
   > 📝 comment: english-only v1
@@ -116,8 +113,8 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > **unpredictable** (they jump by an arbitrary 200-char cue, not by paper
 > section). M1.5 fixes both and adds the **authors/institutions** front-matter
 > block so the base reader is *reliable* before M2's figures/tables. It pulls
-> forward the navigation-relevant slice of M5 (section detection) **without** the
-> full selection UI, per A10.
+> forward the navigation-relevant slice (section detection) **without** the
+> (now-removed) multi-scope selection UI, per A10.
 
 **Diagnosis (root causes, confirmed on the 1-col Springer sample)**
 - **Chunker drops whole sentences — THE single-run skip (CONFIRMED, ~40% word loss).**
@@ -165,7 +162,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 **Checkpoint 2 — section-aware navigation — DONE 2026-11-25 (awaiting your listen)**
 > You chose: skip granularity = **section + subsection**; announce section names = **ON**.
 > Both confirmed on a live WS read-through over the ACM 2-col sample.
-- [x] `reader/sections.py` (pulled forward from M5) — `detect_sections` builds a flat
+- [x] `reader/sections.py` — `detect_sections` builds a flat
        list of **sections** over the *spoken* blocks, each with a `block_start` (and
        `cue_start`/`cue_end` filled by the orchestrator): `title`, `authors`+`affiliations`,
        `abstract`, `keywords`, `ccs`, numbered/bold **section / subsection** headings,
@@ -349,8 +346,8 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 >   (`test_parity_scanned_reads_like_text`) asserts the scan recovers the typed twin's content
 >   (skips itself if the `[ocr]` extra or the sample is absent). **+14 tests → 146 pass.**
 >
-> _**Limits → later:** OCR'd lines have no font cues (section detection is weaker on scans — an
-> M5 concern); a text-less page with OCR *off* still surfaces its raster as a display figure (the
+> _**Limits → later:** OCR'd lines have no font cues (section detection is weaker on scans — a known
+> limitation); a text-less page with OCR *off* still surfaces its raster as a display figure (the
 > spoken path is unaffected); the "use OCR to confirm caption limits" stretch goal is deferred._
 
 ### M4 — Config & models  _status: [x] done 2026-11-26_
@@ -376,8 +373,8 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > fully takes effect on the next load (noted in the picker's tooltip). The badge
 > shows *status*; the picker in the settings group is the *control*.
 >
-> **What the file holds** (durable settings only — `pdf_path`/`checkpoint_path`
-> are per-run and never saved): `host`, `port`, `open_browser`, `local_only`,
+> **What the file holds** (durable settings only — `pdf_path` is per-run and never
+> saved): `host`, `port`, `open_browser`, `local_only`,
 > `playback`, `director`, `llm_provider`, `llm_model`, `ollama_host`, `voice`,
 > `style`. A host *endpoint* (not a credential) is persisted; API keys are never
 > written. Write
@@ -412,22 +409,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > fields (`PERSIST_FIELDS`), and a save with *every* credential exported writes none to
 > disk (while the host still is). +13 tests → **202**, +1 guard → **203 pass.**_
 
-### M5 — Selection  _status: [ ] not started_
-- [ ] `reader/sections.py` — heading detection (font-size + numbering; optional LLM refine)
-- [ ] `reader/scope.py` — selection → filtered, reading-ordered timeline slice
-- [ ] viewer selection UI: **whole / sections / free-form text range / specific figures-tables / combine**
-- [ ] explanations fire for figures/tables **referenced within the read scope** + explicitly selected
-- [ ] in the whole/auto selection figures and tables should be explained when referenced and then not mentioned again in the normal prose
-> 📝 comment:
-
-### M6 — Hardening  _status: [ ] not started_
-- [ ] graceful **LLM-down** degradation: keep reading text, skip explanations, show notice
-- [ ] **resume checkpoint** (JSON position, A14)
-- [ ] error handling + unit tests (ingest, references, timeline, scope)
-- [ ] check documentation for a guided install for the core and optional systems
-> 📝 comment:
-
-### M7 — UI revamp  _status: [ ] not started_
+### M5 — UI revamp  _status: [ ] not started_
 - [ ] make sure the cue being read is the one in now reading at all times as it changes to the next cue to soon in previous versions
 - [ ] make a light UI with high contrast as default but give a dark high contrast option. also add a dracula theme
 - [ ] change to the now reading and transcript parts of the UI: text (particularly now reading) should have high contrast an larger for low-vision users (primary target of this tool). previous cues and forward cues should also show up similar the lyrics UI in Apple Music instead of the block system in place for previous milestones ![lyricsUI](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnxUzHYsARyk4-WAldA5Gc-DO6YlAn45W3kaIATVcuBryai1UxxX0iHHv_&s=10)
@@ -435,7 +417,14 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 - [ ] show markdown version of table and the figure being explained whenever that's happening on the new transcript/now reading UI
 > 📝 comment:
 
-### M8 — Packaging (later, post-v1)  _status: [ ] not started_
+### M6 — Packaging (later, post-v1)  _status: [ ] not started_
+> **Hardening first, then the binary.** The old *Hardening* milestone was folded
+> here: its pending items lead the packaging work. The two already-decided items are
+> not carried as tasks — graceful LLM-down / TTS-down degradation already shipped with
+> M2.5 / M1, and the **resume checkpoint (A14) was scrapped** as not needed: it would
+> add complications for a local reader.
+- [ ] **hardening:** error handling + unit tests across ingest / references / timeline
+- [ ] **hardening:** a guided install doc for the core + each optional extra
 - [ ] **PyInstaller / Briefcase** cross-platform binary (`.exe` / AppImage / `.dmg`)
 - [ ] final UI should open on its own window but keep mostly web usage (similar to discord)
 - [ ] `--auto --no-browser` headless polish (A12)
@@ -457,9 +446,8 @@ ownvoicereader/
 ├─ reader/
 │  ├─ references.py      [ ]
 │  ├─ timeline.py        [ ]   # "right-moment" engine
-│  ├─ orchestrator.py    [ ]   # scoped playback + transport
-│  ├─ sections.py        [ ]   # heading detection (M5)
-│  └─ scope.py           [ ]   # selection → timeline slice (M5)
+│  ├─ orchestrator.py    [ ]   # cues + playback + transport
+│  └─ sections.py        [x]   # section-aware navigation (M1.5, done)
 ├─ llm/
 │  ├─ client.py          [ ]   # ollama library, streaming, vision
 │  ├─ explainer.py       [ ]   # vision figures / grid-summary tables
@@ -470,10 +458,10 @@ ownvoicereader/
 │  └─ player.py          [ ]   # browser audio (default) / system audio
 ├─ server/
 │  ├─ app.py             [ ]   # FastAPI/uvicorn, 127.0.0.1, open browser
-│  ├─ api.py             [ ]   # REST: start/stop/pause/skip/select/model/voice/style
+│  ├─ api.py             [ ]   # REST: start/stop/pause/skip/model/voice/style
 │  └─ stream.py          [ ]   # WebSocket/SSE events + audio framing
 ├─ viewer/
-│  ├─ index.html         [ ]   # PDF.js render + selection UI
+│  ├─ index.html         [ ]   # PDF.js render + controls
 │  └─ transport.js       [ ]   # WS/SSE client + audio + controls
 ├─ config.py             [ ]
 └─ cli.py               [ ]   # `ownvoicereader` entry: open viewer / --auto headless
@@ -500,8 +488,7 @@ Text and OCR feed this **same** shape, so the reader never branches on origin.
 ---
 
 ## 5. Risks & mitigations
-- **Reading-order / columns** in multi-column papers → #1 correctness risk for "right moment." Mitigation: validate on the sample paper from §1.3 before M5.
-- **Selection mapping** (PDF.js text-layer offsets → timeline indices) → map via **page + text-span anchors**, not raw char counts; test on samples.
+- **Reading-order / columns** in multi-column papers → #1 correctness risk for "right moment." Mitigation: validate on the sample paper from §1.3.
 - **Vision availability** → not every LLM sees images → A2 caption+context fallback is **mandatory**.
 - **Audio latency / interruptibility** → streamed chunks + HTML5 audio (A9) keep pause/stop instant.
 - **Dependency weight** → keep core light; gate heavy deps behind extras.
@@ -512,10 +499,11 @@ Text and OCR feed this **same** shape, so the reader never branches on origin.
 
 ---
 
-## 6. Definition of done (v1 exit = M0–M6)
+## 6. Definition of done (v1 exit = M0–M5)
 
-`ownvoicereader paper.pdf` opens a local viewer where you can read the **whole paper or
-a selection** aloud in a chosen voice/style + LLM, get figure/table explanations
+`ownvoicereader paper.pdf` opens a local viewer where you can read the **whole paper**
+(jumping between its sections) aloud in a chosen voice/style + LLM, get figure/table
+explanations
 at first reference, and control playback — with **zero cloud required** when using
 Ollama + local TTS/OCR.
 

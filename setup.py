@@ -2,7 +2,7 @@
 
 This file exists so legacy tooling that still calls `setup.py` (and so the
 project can be `pip install -e .`'d without a build isolation step) finds a
-setup.py. Distribution / packaging (PyInstaller/Briefcase, M7) is deferred.
+setup.py. Distribution / packaging (PyInstaller/Briefcase, M6) is deferred.
 """
 
 from setuptools import setup

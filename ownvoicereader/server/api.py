@@ -157,7 +157,7 @@ def get_tts_engine(state) -> "Optional[object]":
     """Return the shared local TTS engine, building it once and caching it.
 
     ``None`` means no local engine is available; the viewer then shows voice
-    controls as unavailable (graceful degradation, M6).
+    controls as unavailable (graceful degradation).
     """
     if getattr(state, "tts", None) is None and not getattr(state, "_tts_tried", False):
         state._tts_tried = True

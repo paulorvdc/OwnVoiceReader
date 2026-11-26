@@ -41,8 +41,7 @@ class BBox:
     """A page-space bounding box: x0,y0 = top-left; x1,y1 = bottom-right.
 
     Coordinates are in PDF user space (origin top-left after the standard
-    PDF.js/PyMuPDF transform) and are used for figure/table cropping and for
-    anchoring text-layer selection (M5).
+    PDF.js/PyMuPDF transform) and are used for figure/table cropping.
     """
 
     x0: float
@@ -91,7 +90,7 @@ class Block:
     image: Optional[bytes] = None
     caption: Optional[str] = None
     table_grid: Optional[list[list[Any]]] = None
-    # M1.5: typographic cues for section detection (pulled forward from M5).
+    # M1.5: typographic cues for section detection (the section-aware navigation).
     # Propagated from the block's dominant line by reading_order:
     #   font_size = the *largest* span size in the block (a heading stands out
     #               by being bigger than the ~9-10pt body)

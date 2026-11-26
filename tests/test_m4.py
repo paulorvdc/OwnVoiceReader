@@ -146,7 +146,6 @@ def test_save_settings_writes_only_durable_fields(tmp_path):
     written = (tmp_path / "config.yaml").read_text()
     # transient per-run fields must not leak into the durable file
     assert "pdf_path" not in written
-    assert "checkpoint_path" not in written
     # durable fields are present
     for key in ("llm_model", "voice", "style", "local_only", "playback"):
         assert key in written

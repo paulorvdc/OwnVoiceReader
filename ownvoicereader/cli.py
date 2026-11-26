@@ -51,7 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--voice", default=None, help="TTS voice id")
     p.add_argument("--style", choices=["academic-calm", "quick-scan", "narrative", "lecture"],
                    default=None, help="reader style preset")
-    p.add_argument("--resume", default=None, help="resume from a JSON checkpoint file")
     p.add_argument("-v", "--verbose", action="count", default=0, help="-v / -vv for more logging")
     return p
 

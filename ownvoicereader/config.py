@@ -65,9 +65,9 @@ def default_config_path() -> Path:
     return Path(env).expanduser() if env else DEFAULT_CONFIG_PATH.expanduser()
 
 
-# Settings a user persists to config.yaml. ``pdf_path`` / ``checkpoint_path`` are
-# per-run (transient) and are deliberately NOT saved — they are arguments, not
-# settings. Everything here is a durable user choice.
+# Settings a user persists to config.yaml. ``pdf_path`` is per-run (transient)
+# and is deliberately NOT saved — it is an argument, not a setting. Everything
+# here is a durable user choice.
 PERSIST_FIELDS: tuple[str, ...] = (
     "host", "port", "open_browser", "local_only",
     "playback", "director", "llm_provider", "llm_model", "ollama_host", "voice", "style",
@@ -142,9 +142,6 @@ class Config:
     voice: Optional[str] = None
     style: Optional[str] = None        # academic-calm | quick-scan | narrative | lecture
 
-    # --- resume checkpoint (A14) --------------------------------------- #
-    checkpoint_path: Optional[str] = None
-
     # --- resolution (M4 layering) -------------------------------------- #
     @classmethod
     def from_env(cls, config_path: Optional[str | Path] = None, *,
@@ -199,15 +196,13 @@ class Config:
             self.voice = a["voice"]
         if a.get("style"):
             self.style = a["style"]
-        if a.get("resume"):
-            self.checkpoint_path = a["resume"]
         return self
 
     # --- persistence (M4) ---------------------------------------------- #
     def to_yaml_dict(self) -> dict:
         """The *persistent* settings as a plain mapping, skipping unset (None)
-        ones so the saved file stays minimal. Transient per-run fields (pdf_path,
-        checkpoint_path) are never included."""
+        ones so the saved file stays minimal. Transient per-run fields (pdf_path)
+        are never included."""
         out: dict = {}
         for name in PERSIST_FIELDS:
             val = getattr(self, name, None)
