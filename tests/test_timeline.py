@@ -24,6 +24,8 @@ from ownvoicereader.reader.timeline import (
     compose_explanation,
     build_explain_schedule,
     _context_of,
+    start_marker_text,
+    end_marker_text,
 )
 
 
@@ -191,14 +193,23 @@ def test_orchestrator_emits_explain_after_reference_cue():
     orch = Orchestrator(doc, None)  # null TTS -> events only, no audio
     events = _drive(orch)
 
-    explains = [e for e in events if e.type == ReadingEventType.EXPLAIN]
-    assert len(explains) == 1, [e.type.value for e in events]
-    ex = explains[0]
+    # The reference is on the *last* cue, so the group gets a start marker but no
+    # end marker (there is no prose to return to).
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    markers = [e for e in events
+               if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") in ("start", "end")]
+    assert len(body) == 1, [e.type.value for e in events]
+    ex = body[0]
     assert ex.meta.get("kind") == "explain"
     assert ex.meta.get("target") == "table:1"
     assert ex.text.startswith("Table 1, dataset statistics")
     # A pending follow-on carries no "index" — the cue counter is not advanced.
     assert "index" not in ex.meta
+    # The group is opened by a spoken start marker and has no closing marker here.
+    assert len(markers) == 1 and markers[0].meta.get("phase") == "start"
+    # The start marker precedes the body it opens.
+    assert events.index(markers[0]) < events.index(ex)
 
 
 def test_orchestrator_does_not_drop_last_cue_explanation():
@@ -211,8 +222,128 @@ def test_orchestrator_does_not_drop_last_cue_explanation():
     ]
     orch = Orchestrator(doc, None)
     events = _drive(orch)
-    explains = [e for e in events if e.type == ReadingEventType.EXPLAIN]
-    assert len(explains) == 1, [e.type.value for e in events]
-    assert explains[0].meta.get("target") == "table:1"
-    # The EXPLAIN is the final event emitted (after the last text cue).
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    assert len(body) == 1, [e.type.value for e in events]
+    assert body[0].meta.get("target") == "table:1"
+    # The *last* spoken unit is the body itself (no closing marker at the very
+    # end) — a last-cue explanation is never dropped.
     assert events[-1].type == ReadingEventType.EXPLAIN
+    assert events[-1].meta.get("phase") == "body"
+
+
+# --------------------------------------------------------------------------- #
+# M2.5 markers + multi-cue explanations
+# --------------------------------------------------------------------------- #
+def test_start_marker_phrasing_is_singular_and_kind_aware():
+    fig = [ExplainItem(target="fig:3", kind=BlockKind.FIGURE, label="3", label_word="Figure")]
+    tab = [ExplainItem(target="table:2", kind=BlockKind.TABLE, label="2", label_word="Table")]
+    assert start_marker_text(fig) == "Now, a closer look at this figure."
+    assert start_marker_text(tab) == "Now, a closer look at this table."
+    # Several of one kind pluralise.
+    assert start_marker_text(fig + [fig[0]]) == "Now, a closer look at these figures."
+    assert start_marker_text(tab + [tab[0]]) == "Now, a closer look at these tables."
+    # A mixed group names both.
+    assert start_marker_text(fig + tab) == "Now, a closer look at these figures and tables."
+
+
+def test_end_marker_text():
+    assert end_marker_text() == "Back to the text."
+
+
+def test_orchestrator_splits_long_explanation_into_multiple_cues():
+    # A long (vision) description is not crammed into one cue: it is split into
+    # TTS-sized chunks, each its own EXPLAIN unit. The label leads only the first.
+    doc = ReadingDocument()
+    doc.blocks = [B("See Fig. 3 below.", 0)]
+    orch = Orchestrator(doc, None)
+    orch.explain_markers = False  # isolate the split from the spoken markers
+    item = ExplainItem(
+        target="fig:3", kind=BlockKind.FIGURE, label="3", label_word="Figure",
+        vision=("a three-stage pipeline that first tokenizes the input and then routes it "
+                "through a shared encoder before a lightweight decoder head produces the "
+                "final scores; the three stages run in parallel and their outputs are "
+                "fused by a small gating network before the prediction is returned"),
+    )
+    item.text = compose_explanation(item)
+    orch._pending_explain.append(item)   # injected directly: isolates the split
+    events = _drive(orch)
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    assert len(body) >= 2, [e.text for e in body]
+    # The figure label leads only the first body cue; later cues are continuations.
+    assert body[0].text.startswith("Figure 3,")
+    assert not body[1].text.startswith("Figure 3")
+    # Injected directly, so no markers are emitted.
+    assert all(e.meta.get("phase") not in ("start", "end")
+               for e in events if e.type == ReadingEventType.EXPLAIN)
+
+
+def test_orchestrator_brackets_multi_cue_explanation_with_one_pair():
+    # A long body that splits into several cues still shares ONE start and ONE end
+    # marker (not one pair per chunk), and the end marker is spoken when prose
+    # follows.
+    doc = ReadingDocument()
+    doc.blocks = [
+        B("We report the results in Table 1 here.", 0),
+        B("The model is fast and accurate and reliable.", 0),
+    ]
+    orch = Orchestrator(doc, None)
+    long_vision = ("the table lists each model alongside its accuracy across five benchmark "
+                   "datasets and three random seeds and it also reports the training cost in "
+                   "floating point operations per sample showing that the proposed method is "
+                   "consistently the best while remaining the cheapest of all the baselines")
+    for items in orch.explain_schedule.values():
+        for it in items:
+            it.vision = long_vision
+            it.text = compose_explanation(it)
+    events = _drive(orch)
+    expl = [e for e in events if e.type == ReadingEventType.EXPLAIN]
+    phases = [e.meta.get("phase") for e in expl]
+    assert phases.count("start") == 1
+    assert phases.count("end") == 1
+    assert phases[0] == "start" and phases[-1] == "end"
+    assert phases.count("body") >= 2
+    assert any("Back to the text." in e.text for e in expl if e.meta.get("phase") == "end")
+
+
+def test_orchestrator_no_end_marker_when_explanation_is_last():
+    # A reference on the very last cue gets a start marker but no "back to the
+    # text" — there is no prose to return to.
+    doc = ReadingDocument()
+    doc.blocks = [B("We report the results in Table 1 below.", 0)]
+    orch = Orchestrator(doc, None)
+    events = _drive(orch)
+    expl = [e for e in events if e.type == ReadingEventType.EXPLAIN]
+    phases = [e.meta.get("phase") for e in expl]
+    assert "start" in phases
+    assert "end" not in phases
+    assert phases[-1] == "body"
+
+
+def test_orchestrator_explain_markers_off_emits_body_only():
+    doc = ReadingDocument()
+    doc.blocks = [
+        B("We report the results in Table 1 here.", 0),
+        B("The model is fast and accurate.", 0),
+    ]
+    orch = Orchestrator(doc, None)
+    orch.explain_markers = False
+    events = _drive(orch)
+    expl = [e for e in events if e.type == ReadingEventType.EXPLAIN]
+    assert [e.meta.get("phase") for e in expl] == ["body"], [e.text for e in expl]
+
+
+def test_orchestrator_body_meta_has_phase_and_no_index():
+    doc = ReadingDocument()
+    doc.blocks = [B("See Fig. 3 here.", 0), B("More text follows after.", 0)]
+    orch = Orchestrator(doc, None)
+    events = _drive(orch)
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    assert body
+    m = body[0].meta
+    assert m["phase"] == "body"
+    assert m["target"] == "fig:3"
+    # The pending-follow-on invariant holds: an explanation never carries an index.
+    assert "index" not in m

@@ -395,7 +395,7 @@
       // section jump — the jump's `state` frame resyncs the counter + section.
       if (this._jumping) return;
       // Transcript + "now reading" + follow-along highlight.
-      this.addTranscript(ev.text, ev.type === "notice" ? "notice" : "");
+      this.addTranscript(ev.text, this._lineClass(ev));
       el.nowText.textContent = ev.text || "…";
       // Live cue counter + "now reading" section chip (M1.5 checkpoint 2): the
       // counter advances as each cue is spoken, not only on a pause.
@@ -420,6 +420,19 @@
         this.waitingForCue = false;
         this.maybeFetchMore();
       }
+    }
+
+    // A transcript line class (M2.5). Explanation units are tagged with
+    // `meta.phase` ("start"/"body"/"end"); we style them distinctly so the
+    // listener can see where the reader diverts to explain a figure/table and
+    // when it returns. Markers ("Now, a closer look…" / "Back to the text.") are
+    // bolder than the body they bracket.
+    _lineClass(ev) {
+      if (ev.type === "notice") return "notice";
+      const phase = ev.meta && ev.meta.phase;
+      if (phase === "start" || phase === "end") return "explain-marker";
+      if (phase === "body") return "explain";
+      return "";
     }
 
     onBinary(data) {

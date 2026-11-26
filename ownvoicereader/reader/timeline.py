@@ -23,6 +23,19 @@ to be spoken **immediately after** — the reader hears "…as shown in Fig. 3, 
 results…" and then "Figure 3 shows …". Because the explanation is a pending
 follow-on (it does not advance the cue playhead), section / cue navigation is
 untouched.
+
+Two refinements (M2.5):
+
+* **An explanation may span several cues.** The composed text is split into
+  TTS-sized chunks (a long vision description is not crammed into one cue), each
+  spoken as its own cue / WAV. The split happens *at fire time* so a vision
+  description that lands in the background is spoken in full.
+* **Spoken markers bracket the explanation.** A start marker ("Now, a closer
+  look at this figure.") announces the diversion from the prose, and an end
+  marker ("Back to the text.") announces the return — spoken only when prose
+  actually follows. Each is tagged ``meta.phase`` ("start" / "body" / "end") so
+  the viewer can style them. The markers live here as pure phrasing; the
+  orchestrator assembles the group (one shared start + end per referenced cue).
 """
 
 from __future__ import annotations
@@ -148,6 +161,42 @@ def compose_explanation(item: ExplainItem) -> str:
         ctx = ctx[:_CONTEXT_MAX_CHARS]
         return _sentence(f"{lead} is referenced here: {ctx}")
     return f"{lead} is referenced here."
+
+
+# --------------------------------------------------------------------------- #
+# Explanation markers (M2.5): spoken bookends around a figure/table explanation
+# --------------------------------------------------------------------------- #
+# The primary user *cannot see the page*, so when the reader diverts from the
+# prose to explain a figure/table it announces the diversion and the return in
+# words: a start marker ("Now, a closer look at this figure.") before the body
+# and an end marker ("Back to the text.") once the prose resumes. The markers are
+# *spoken* and also carried in each event's ``meta.phase`` so the viewer can
+# style them in the transcript. An explanation group (the figures/tables one cue
+# references) shares *one* start and *one* end marker rather than one pair each —
+# an interleaved two-column cue can reference several at once.
+def start_marker_text(items: list[ExplainItem]) -> str:
+    """The spoken lead-in before an explanation group's body.
+
+    Singular/plural and figure/table-aware so the marker reads naturally for one
+    figure, several figures, or a mixed group.
+    """
+    figs = any(i.kind is BlockKind.FIGURE for i in items)
+    tabs = any(i.kind is BlockKind.TABLE for i in items)
+    n = len(items)
+    if figs and tabs:
+        subject = "these figures and tables"
+    elif figs:
+        subject = "this figure" if n == 1 else "these figures"
+    elif tabs:
+        subject = "this table" if n == 1 else "these tables"
+    else:  # pragma: no cover - a group is never empty when called
+        subject = "this figure" if n == 1 else "these figures"
+    return f"Now, a closer look at {subject}."
+
+
+def end_marker_text() -> str:
+    """The spoken lead-out, spoken before the prose resumes after an explanation."""
+    return "Back to the text."
 
 
 def _context_of(blocks: list[Block], block_id: str, raw: str) -> str:

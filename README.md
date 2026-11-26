@@ -39,7 +39,13 @@ listenable). What works today:
   explanation. With a local vision model (`lfm3-vl:2b`, the `[vision]` extra) it
   describes **what the figure shows** / **what the table's data means** — each
   figure and each table gets its *own* description (a same-kind, 2-D proximity
-  link keeps a figure's pixels off a table). A **status badge** shows the state
+  link keeps a figure's pixels off a table). Because a single cue is too short to
+  explain a figure or table, an explanation may **span several spoken cues** (its
+  text is split into TTS-sized chunks, spoken in full even when the vision
+  description lands late), and the reader **brackets it with spoken markers** —
+  "Now, a closer look at this figure…" / "Back to the text." — so a listener who
+  can't see the page knows when the reader diverts and when it returns. A
+  **status badge** shows the state
   (green = model reachable, red = "set up Ollama"); **without a vision model the
   reader runs fully** and falls back to a clean **caption + context** summary
   (A2 base) — it never stops, never goes silent. Vision is computed in the

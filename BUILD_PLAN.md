@@ -299,6 +299,18 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > _**Limits → later:** captionless/cross-page figures stay on A2 (caption clean → text fine);
 > vision thread best-effort (no hot-path wait). Captionless tables (IEEE `TABLE I`) use the A2
 > reference sentence for context, still get a vision description when linked._
+>
+> _**M2.5 follow-up — multi-cue explanations + spoken markers (2026-11-26).** A single cue
+> is too short for a figure/table, so an explanation now **spans several cues**: its composed
+> text is split into TTS-sized chunks **at fire time** (a vision description that lands in the
+> background is spoken in full), each its own `EXPLAIN` event + WAV. The group is **bracketed by
+> spoken markers** — a start ("Now, a closer look at this figure/table.") and an end ("Back to the
+> text.", spoken **only when prose follows**) — so a listener who can't see the page knows when
+> the reader diverts and when it returns. Markers are tagged `meta.phase`
+> ("start"/"body"/"end"); the viewer styles them (italic body, accented markers). A group shares
+> **one** start + **one** end (an interleaved 2-column cue can reference several at once).
+> `orch.explain_markers` toggles the bookends (default on). The headless summary now reports
+> *spoken units* vs *text cues* (e.g. **266 / 253** on ACM). +7 tests → **132 pass.**_
 
 ### M3 — OCR (text/OCR interchangeable)  _status: [ ] not started_
 - [ ] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer

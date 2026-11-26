@@ -186,8 +186,9 @@ def _run_headless(config: Config) -> int:
         log.info("interrupted")
 
     print(
-        f"\nread {spoken}/{orch.n} cue(s) of '{doc.title}' "
-        f"({doc.page_count} pages, engine={tts.name if tts else 'none'})"
+        f"\nread {spoken} spoken unit(s) of '{doc.title}' "
+        f"({orch.n} text cues, {doc.page_count} pages, "
+        f"engine={tts.name if tts else 'none'})"
     )
     return spoken
 

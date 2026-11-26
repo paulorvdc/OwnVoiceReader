@@ -140,6 +140,11 @@
     #transcript .line { padding: 3px 16px; font-size: 13px; color: var(--fg-dim); }
     #transcript .line.current { color: var(--fg); background: var(--accent-dim); }
     #transcript .line.notice { color: var(--warn); font-style: italic; }
+    /* M2.5: a figure/table explanation is a side-note the reader diverts to — the
+       body reads as an italic aside; the spoken markers ("Now, a closer look…" /
+       "Back to the text.") are accented + bold so they stand out. */
+    #transcript .line.explain { font-style: italic; }
+    #transcript .line.explain-marker { color: var(--accent); font-weight: 600; }
 
     /* Status line */
     .status {

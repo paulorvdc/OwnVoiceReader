@@ -36,7 +36,12 @@ from .sections import (
     is_heading,
 )
 from .references import build_index
-from .timeline import ExplainItem, build_explain_schedule
+from .timeline import (
+    ExplainItem,
+    build_explain_schedule,
+    start_marker_text,
+    end_marker_text,
+)
 
 log = logging.getLogger("ownvoicereader.reader.orchestrator")
 
@@ -83,6 +88,22 @@ class Cue:
                 "kind": self.section_kind,
             }
         return d
+
+
+@dataclass
+class _Speak:
+    """A ready-to-speak explanation unit: a marker or a pre-cut body chunk.
+
+    The pending-explanation queue (:attr:`Orchestrator._pending_explain`) holds
+    either an :class:`ExplainItem` — a figure/table whose composed text is split
+    into TTS-sized cues *at fire time* so a late vision description is spoken in
+    full — or a ``_Speak``: a marker or a body chunk already cut to size, emitted
+    verbatim. Every unit becomes one ``EXPLAIN`` event + WAV and carries **no**
+    ``index`` (an explanation is a pending follow-on, not a cue).
+    """
+
+    text: str
+    meta: dict
 
 
 # The top band of a page (PDF points) holds the running header. A short block in
@@ -284,7 +305,14 @@ class Orchestrator:
         # caption+context base; M2.5 layers vision on top (below).
         self.reference_index = build_index(doc.blocks)
         self.explain_schedule = build_explain_schedule(self.cues, doc.blocks, self.reference_index)
-        self._pending_explain: deque[ExplainItem] = deque()
+        # A spoken explanation may span several cues (a long vision description is
+        # split into TTS-sized chunks) and is bracketed by spoken markers. The
+        # queue holds a mix of :class:`ExplainItem` (split at fire time) and
+        # :class:`_Speak` (a marker / a pre-cut chunk).
+        self._pending_explain: deque = deque()
+        # Spoken bookends around each explanation ("Now, a closer look…" / "Back
+        # to the text."). On by default; off for a plainer read.
+        self.explain_markers = True
         # M2.5: a vision LLM (if any) enhances each item's explanation in the
         # background, so by the time the reader reaches the reference the
         # description is usually ready; if not, the A2 base is spoken.
@@ -500,29 +528,48 @@ class Orchestrator:
             log.exception("TTS error")
             return None
 
-    def _explain_event(self, item: ExplainItem) -> ReadingEvent:
-        """A figure/table explanation spoken *at its first reference* (A7).
+    def _explain_meta(self, item: ExplainItem, phase: str) -> dict:
+        """The event meta for an explanation unit (a body chunk or a start marker).
 
-        ``meta`` marks it as an ``explain`` (so the viewer can style it in M7)
-        and carries the figure/table's page + bbox for the follow-along
-        highlight. It has **no** ``index`` on purpose: an explanation is a pending
-        follow-on, not a cue, so the cue counter is not advanced by it."""
-        return ReadingEvent(
-            type=ReadingEventType.EXPLAIN,
-            text=item.text,
-            block_id=None,
-            page=item.page,
-            meta=item.meta,
-        )
+        Carries the figure/table's target / page / bbox for the follow-along
+        highlight, plus ``phase`` ("start" / "body" / "end") so the viewer can
+        style it. There is **no** ``index`` on purpose: an explanation is a pending
+        follow-on, not a cue, so the cue counter is never advanced by it."""
+        meta = dict(item.meta)
+        meta["phase"] = phase
+        return meta
+
+    def _queue_explanation_group(self, items: list[ExplainItem], *,
+                                more_text_after: bool) -> None:
+        """Enqueue an explanation *group* (the figures/tables one cue references)
+        as a spoken sequence: an opening marker, then each item's body (split into
+        TTS-sized cues *at fire time*), then — only when prose actually follows —
+        a closing marker. Markers are skipped when ``explain_markers`` is off.
+
+        A group shares *one* opening and *one* closing marker rather than one pair
+        per item, because an interleaved two-column cue can reference several
+        figures/tables at once. The end marker is a pure transition (no target /
+        page / bbox), so the next *text* cue owns the view once we return."""
+        if self.explain_markers:
+            self._pending_explain.append(
+                _Speak(start_marker_text(items), self._explain_meta(items[0], "start")))
+        for item in items:
+            self._pending_explain.append(item)
+        if self.explain_markers and more_text_after:
+            self._pending_explain.append(
+                _Speak(end_marker_text(), {"kind": "explain", "phase": "end"}))
 
     async def emit_next(self) -> Optional[tuple[ReadingEvent, Optional[bytes]]]:
         """Return the next reading unit and its WAV bytes (or ``None``).
 
         A **pending figure/table explanation** (A7) is emitted *first* — it was
         queued by the cue just spoken, so "…as shown in Fig. 3, the results…" is
-        followed by "Figure 3 shows …" before the next prose cue. Otherwise the
-        text cue at ``pos`` is played and any explanation scheduled for it is
-        queued to speak next.
+        followed by "Figure 3 shows …" before the next prose cue. An explanation
+        may span *several* cues (its text is split into TTS-sized chunks) and is
+        bracketed by spoken markers ("Now, a closer look at this figure." / "Back
+        to the text."), each a pending follow-on that does not advance the cue
+        playhead. Otherwise the text cue at ``pos`` is played and any explanation
+        scheduled for it is queued to speak next.
 
         Returns ``None`` only when the reading is finished *and* no explanation
         is pending. On a TTS failure a text cue becomes a NOTICE (M6 path); a
@@ -531,9 +578,27 @@ class Orchestrator:
         # 1) A pending explanation fires first (checked before done, so a
         #    last-cue explanation is never dropped).
         if self._pending_explain:
-            item = self._pending_explain.popleft()
-            event = self._explain_event(item)
-            audio = await self._synthesize(item.text)
+            unit = self._pending_explain.popleft()
+            if isinstance(unit, _Speak):
+                # A marker or a body chunk already cut to size: speak verbatim.
+                text, meta = unit.text, unit.meta
+            else:
+                # A figure/table item: split its (possibly vision-enhanced) text
+                # *now* so a late vision description is spoken in full, speak the
+                # first chunk, and re-queue the rest so each is its own cue / WAV.
+                cues = _split_into_chunks(unit.text) or [unit.text]
+                meta = self._explain_meta(unit, "body")
+                for extra in reversed(cues[1:]):
+                    self._pending_explain.appendleft(_Speak(extra, meta))
+                text = cues[0]
+            event = ReadingEvent(
+                type=ReadingEventType.EXPLAIN,
+                text=text,
+                block_id=None,
+                page=meta.get("page"),
+                meta=meta,
+            )
+            audio = await self._synthesize(text)
             self._last = (None, audio, event)
             return event, audio
         # 2) Done.
@@ -558,8 +623,12 @@ class Orchestrator:
                 block_id=cue.block_id, page=cue.page,
                 meta=cue.meta,
             )
-        for item in self.explain_schedule.get(cue.index, []):
-            self._pending_explain.append(item)
+        # Queue this cue's explanation group (if any). ``more_text_after`` gates
+        # the closing "Back to the text." marker so we never return to prose that
+        # isn't there.
+        items = self.explain_schedule.get(cue.index, [])
+        if items:
+            self._queue_explanation_group(items, more_text_after=self.pos < self.n)
         self._last = (cue, audio, event)
         return event, audio
 
@@ -578,7 +647,8 @@ class Orchestrator:
     async def run_to_end(self, player) -> int:
         """Headless read to completion (``--auto``). Plays via ``player``.
 
-        Returns the number of cues spoken. Used by the headless / CI path.
+        Returns the number of *spoken units* — text cues plus any figure/table
+        explanation cues and markers. Used by the headless / CI path.
         """
         from ..voice.player import NullPlayer
 
