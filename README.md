@@ -131,8 +131,8 @@ Only the **voice model** (~63 MB) is fetched on first use, into
 # the `piper` binary already comes with the core install — nothing to install here
 # first run downloads en_US-lessac-medium automatically …
 # …or fetch a voice yourself (a handy fallback for offline / locked-down setups):
-#   curl -L -o ~/.cache/ownvoicereader/voices/en_US-lessac-medium.onnx \
-#     https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+curl -L -o ~/.cache/ownvoicereader/voices/en_US-lessac-medium.onnx \
+https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
 ```
 
 Point the app at a different Piper binary or voice dir with
