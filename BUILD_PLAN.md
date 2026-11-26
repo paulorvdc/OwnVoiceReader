@@ -409,13 +409,14 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > fields (`PERSIST_FIELDS`), and a save with *every* credential exported writes none to
 > disk (while the host still is). +13 tests → **202**, +1 guard → **203 pass.**_
 
-### M5 — UI revamp  _status: [~] in progress_
+### M5 — UI revamp  _status: [~] C1 + C2 done · in progress_
 - [x] make sure the cue being read is the one in now reading at all times as it changes to the next cue to soon in previous versions
   - _✅ **C1 done.** "now reading" (text / section chip / cue counter / transcript current-line) + auto page-scroll all key off the cue being *heard*, not the one the server merely produced — the lookahead buffer was making it jump to the next cue too soon. The PDF **overlay highlight was scrapped** (it went off-track on section/block jumps); C3/C4 add a transcript-based follow-along instead. `pump()` wires the critical path first (`onended`→`play()`) and runs the cosmetic now-reading update *guarded* so it can never stall the audio.
-- [ ] make a light UI with high contrast as default but give a dark high contrast option. also add a dracula theme
-- [ ] change to the now reading and transcript parts of the UI: text (particularly now reading) should have high contrast an larger for low-vision users (primary target of this tool). previous cues and forward cues should also show up similar the lyrics UI in Apple Music instead of the block system in place for previous milestones ![lyricsUI](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnxUzHYsARyk4-WAldA5Gc-DO6YlAn45W3kaIATVcuBryai1UxxX0iHHv_&s=10)
-- [ ] transcript block can stay next to the paper when screen space is afforded
-- [ ] show markdown version of table and the figure being explained whenever that's happening on the new transcript/now reading UI
+- [x] make a light UI with high contrast as default but give a dark high contrast option. also add a dracula theme
+  - _✅ **C2 done.** One header button (top-right) cycles **light (high-contrast — the default) → dark (high-contrast) → Dracula** and shows the *current* scheme's icon (🌞 / 🌙 / 🧛). The three schemes are CSS-variable blocks keyed off `<html data-theme>`; a new `--on-accent` var drives text on accent fills so `#open-btn` stays legible in every theme. The pick is saved to `localStorage` (`ownvoicereader.theme`) and a tiny inline `<head>` script applies it *before first paint* so a saved Dracula doesn't flash as light on reload. Status badges + inline `code` (previously hardcoded dark) are now theme-adaptive so the light default reads at high contrast. The white PDF page is left white in all themes (it's the paper)._
+- [ ] change to the now reading and transcript parts of the UI: text (particularly now reading) should have high contrast an larger for low-vision users (primary target of this tool). previous cues and forward cues should also show up similar the lyrics UI in Apple Music instead of the block system in place for previous milestones ![lyricsUI](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnxUzHYsARyk4-WAldA5Gc-DO6YlAn45W3kaIATVcuBryai1UxxX0iHHv_&s=10). show the now reading in the middle with a large font and one previous cue and the next in the bottom with smaller font.
+- [ ] transcript block can stay to the right of the paper view when screen space is afforded. when no space on the side is available make it show one line in the bottom with no option to make it larger.
+- [ ] show markdown version of table and the figure being explained whenever that's happening on the new transcript/now reading UI. the image and table view should show the cut sent to the VLM below the text and disappear once it goes back to prose.
 - [ ] buttons to change model, host, voice and save should be in the top bar. bottom bar will only have the media and pdf viewer controls
 - [ ] unify icon style with a single minimalist icon pack (maybe give me some options)
 > 📝 comment:

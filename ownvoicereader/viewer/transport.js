@@ -57,6 +57,7 @@
     nowSection: $("now-section"),
     transcript: $("transcript"),
     transcriptToggle: $("transcript-toggle"),
+    themeBtn: $("theme-btn"),
     audioOut: $("audio-out"),
   };
 
@@ -898,6 +899,40 @@
     reader.connect();
   }
 
+  // --- theme (M5 C2) -----------------------------------------------------
+  // One header button cycles the colour scheme: light (high-contrast — the
+  // default, the low-vision primary target) → dark (high-contrast) → Dracula.
+  // The active scheme lives on <html data-theme> (the CSS variable blocks in
+  // index.html key off it) and is persisted to localStorage under THEME_KEY so it
+  // survives a reload. A tiny inline script in <head> applies the saved value
+  // before first paint (so a saved Dracula doesn't flash as light); here we sync
+  // the button icon/label to whatever is already on <html> and wire the cycle.
+  const THEMES = [
+    { name: "light",   icon: "🌞", label: "Light (high-contrast)" },
+    { name: "dark",    icon: "🌙", label: "Dark (high-contrast)" },
+    { name: "dracula", icon: "🧛", label: "Dracula" },
+  ];
+  const THEME_KEY = "ownvoicereader.theme";
+
+  function applyTheme(name, persist) {
+    const t = THEMES.find((x) => x.name === name) || THEMES[0];
+    document.documentElement.setAttribute("data-theme", t.name);
+    if (el.themeBtn) {
+      el.themeBtn.textContent = t.icon;
+      el.themeBtn.title = "Theme: " + t.label + " — click to cycle";
+      el.themeBtn.setAttribute("aria-label", "Cycle theme; current: " + t.label);
+    }
+    if (persist) {
+      try { localStorage.setItem(THEME_KEY, t.name); } catch (_) { /* private mode */ }
+    }
+  }
+
+  function cycleTheme() {
+    const cur = document.documentElement.getAttribute("data-theme") || "light";
+    const i = THEMES.findIndex((x) => x.name === cur);
+    applyTheme(THEMES[(i + 1) % THEMES.length].name, true);
+  }
+
   // --- controls ----------------------------------------------------------
   function wireControls() {
     $("prev-page").addEventListener("click", () => gotoPage(pageNum - 1));
@@ -960,6 +995,12 @@
       const open = el.transcript.classList.toggle("open");
       el.transcriptToggle.textContent = open ? "transcript ▴" : "transcript ▾";
     });
+    // M5 C2: sync the button to whatever scheme the inline head script already
+    // applied to <html>, then cycle light → dark → Dracula on click (persisted).
+    if (el.themeBtn) {
+      applyTheme(document.documentElement.getAttribute("data-theme") || "light", false);
+      el.themeBtn.addEventListener("click", cycleTheme);
+    }
 
     // Keyboard: space toggles play/pause; arrows navigate pages; +/- zoom; f fit.
     window.addEventListener("keydown", (e) => {

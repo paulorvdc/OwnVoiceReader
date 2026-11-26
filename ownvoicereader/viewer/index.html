@@ -7,18 +7,52 @@
   <!-- Vendored PDF.js (offline). Loaded before transport.js. -->
   <script src="/viewer/vendor/pdfjs/pdf.min.js"></script>
   <style>
-    :root {
-      --bg: #0f1115;
-      --bg-elev: #171a21;
-      --bg-card: #1c2029;
-      --fg: #e7e9ee;
-      --fg-dim: #9aa3b2;
-      --accent: #6ea8fe;
-      --accent-dim: #2d3a52;
-      --ok: #57d97a;
+    /* M5 C2: three colour schemes, all keyed off <html data-theme>. Light
+       high-contrast is the default (the low-vision primary target); the header
+       button cycles light → dark (high-contrast) → Dracula and persists the pick.
+       `--on-accent` is the text colour to place *on* an --accent fill. */
+    :root,
+    [data-theme="light"] {
+      --bg: #f5f7fa;      /* light desk — the white PDF page pops against it */
+      --bg-elev: #ffffff;
+      --bg-card: #ffffff;
+      --fg: #000000;
+      --fg-dim: #333333;
+      --accent: #0044cc;
+      --accent-dim: #dbe7fb;
+      --on-accent: #ffffff;
+      --ok: #0a7d2c;
+      --warn: #8a5a00;
+      --err: #b30000;
+      --border: #1a1a1a;
+    }
+    [data-theme="dark"] {
+      --bg: #000000;
+      --bg-elev: #0d0d0d;
+      --bg-card: #161616;
+      --fg: #ffffff;
+      --fg-dim: #d0d0d0;
+      --accent: #8ec5ff;
+      --accent-dim: #16305c;
+      --on-accent: #000000;
+      --ok: #46d97a;
       --warn: #f0b429;
-      --err: #f2555a;
-      --border: #2a2f3a;
+      --err: #ff5c5c;
+      --border: #4a4a4a;
+    }
+    [data-theme="dracula"] {
+      --bg: #282a36;
+      --bg-elev: #21222c;
+      --bg-card: #343746;
+      --fg: #f8f8f2;
+      --fg-dim: #6272a4;
+      --accent: #bd93f9;
+      --accent-dim: #3d3a5a;
+      --on-accent: #282a36;
+      --ok: #50fa7b;
+      --warn: #ffb86c;
+      --err: #ff5555;
+      --border: #44475a;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -41,12 +75,12 @@
     .badge {
       display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px;
       font-size: 11px; background: var(--accent-dim); color: var(--accent);
+      border: 1px solid var(--accent);
     }
-    .badge.env { background: #243020; color: var(--ok); }
-    .badge.voice { background: #2a2140; color: #c9a0ff; }
-    .badge.vision { background: #14331f; color: var(--ok); }
-    .badge.vision-off { background: #3a1414; color: var(--err); }
-    .badge.off { background: #3a2a2a; color: var(--err); }
+    /* Status badges keep the theme-adaptive accent chip but take a coloured border
+       to signal on/off, so they read on any of the three schemes. */
+    .badge.env, .badge.vision { border-color: var(--ok); }
+    .badge.vision-off, .badge.off { border-color: var(--err); }
 
     .screen { flex: 1 1 auto; min-height: 0; overflow: auto; }
     .hidden { display: none !important; }
@@ -63,7 +97,7 @@
     .drop-title { font-size: 20px; margin: 0 0 6px; }
     .drop-sub { color: var(--fg-dim); margin: 0 0 16px; }
     .drop-hint { color: var(--fg-dim); margin: 16px 0 0; font-size: 12px; }
-    code { background: #0b0d12; padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+    code { background: var(--accent-dim); padding: 1px 5px; border-radius: 4px; color: var(--accent); }
 
     button {
       background: var(--bg-card); color: var(--fg);
@@ -72,7 +106,13 @@
     }
     button:hover:not(:disabled) { border-color: var(--accent); }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
-    #open-btn { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
+    #open-btn { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+    /* M5 C2: the header theme toggle (sun / moon / vampire emoji). */
+    .theme-btn {
+      font-size: 16px; line-height: 1; padding: 4px 8px;
+      background: var(--bg-card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    }
 
     /* Reader */
     #pdf-wrap { display: grid; place-items: start center; padding: 16px; }
@@ -156,12 +196,26 @@
     .status.err { color: var(--err); }
     .status.ok { color: var(--ok); }
   </style>
+  <script>
+    /* M5 C2: apply the saved theme before first paint so a stored scheme (e.g.
+       Dracula) doesn't flash as the light default on reload. transport.js reads
+       the same key ("ownvoicereader.theme") to sync the button + persist on cycle. */
+    (function () {
+      var t;
+      try { t = localStorage.getItem("ownvoicereader.theme"); } catch (e) { t = null; }
+      document.documentElement.setAttribute(
+        "data-theme",
+        t === "light" || t === "dark" || t === "dracula" ? t : "light"
+      );
+    })();
+  </script>
 </head>
 <body>
   <header>
     <h1>OwnVoiceReader</h1>
     <span class="subtitle">your model, your voice, your machine</span>
     <div class="doc-info" id="doc-info"></div>
+    <button id="theme-btn" class="theme-btn" title="Theme (light / dark / Dracula)" aria-label="Cycle theme">🌞</button>
   </header>
 
   <!-- Landing (no document loaded) -->
