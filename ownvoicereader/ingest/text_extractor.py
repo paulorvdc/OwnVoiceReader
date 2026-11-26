@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import pymupdf  # PyMuPDF; `fitz` is a deprecated alias.
 
-from ..model import ReadingDocument
+from ..model import BlockSource, ReadingDocument
 
 log = logging.getLogger("ownvoicereader.ingest.text")
 
@@ -34,6 +34,10 @@ class Line:
 
     ``font_size`` and ``is_bold`` are captured so later milestones (M5 section
     detection, M2 caption sniffing) can use typographic cues without re-parsing.
+    ``source`` records *where the line came from* — the PDF's text layer (the
+    default) or OCR (M3, for pages without a usable text layer) — so the same
+    shape flows through ``reading_order`` for both and the origin is preserved
+    onto the resulting :class:`Block`.
     """
 
     page: int
@@ -44,6 +48,11 @@ class Line:
     y1: float
     font_size: float = 0.0
     is_bold: bool = False
+    # M3: OCR lines set this to BlockSource.OCR; text-layer lines keep the
+    # default. The OCR pipeline cannot recover font cues, so its lines leave
+    # ``font_size``/``is_bold`` at their defaults (honest: a scan has no font
+    # metadata) while still matching the text-line shape exactly.
+    source: BlockSource = BlockSource.TEXT
 
     @property
     def width(self) -> float:

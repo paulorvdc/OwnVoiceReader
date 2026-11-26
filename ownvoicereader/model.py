@@ -237,6 +237,11 @@ class ReadingDocument:
     # Sparse/empty pages flagged by the text extractor (M1): pages whose text
     # layer is missing or trivial and which may need OCR (M3).
     sparse_pages: list[int] = field(default_factory=list)
+    # M3: pages actually read via OCR (a subset of ``sparse_pages`` that the OCR
+    # engine produced text for). Recorded so the reader/UI can tell a scanned
+    # page apart and so figure/table extraction can skip a fully-scanned page
+    # (whose only "image" is the scan itself, not a figure).
+    ocr_pages: list[int] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -247,5 +252,6 @@ class ReadingDocument:
             "metadata": self.metadata.to_dict(),
             "block_count": len(self.blocks),
             "sparse_pages": self.sparse_pages,
+            "ocr_pages": self.ocr_pages,
             "created_at": self.created_at,
         }

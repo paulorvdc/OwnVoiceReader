@@ -17,9 +17,10 @@ open a PDF directly — that path exists for headless / CI use
 
 ## Status
 
-This is at **Milestone M2 + M2.5** — figures/tables are explained at their first
-reference, with an **optional** local vision LLM (M0–M1 closed; M2.5 done and
-listenable). What works today:
+This is at **Milestone M2 + M2.5 + M3** — figures/tables are explained at their
+first reference, an **optional** local vision LLM describes them (M2.5), and
+**scanned papers are read via OCR** (M3). M0–M1 closed; M2.5 and M3 done and
+listenable. What works today:
 
 - ✅ `ownvoicereader` starts a local server (127.0.0.1, fixed default port
   **6767**) and opens your browser to a clean viewer.
@@ -51,6 +52,15 @@ listenable). What works today:
   (A2 base) — it never stops, never goes silent. Vision is computed in the
   background at load, so the read is never blocked. See *(Optional) Vision LLM*
   below.
+- ✅ **Scanned papers via OCR** (M3) — a page with no text layer (a scanned or
+  "print-as-image" PDF) is detected by its sparse text layer, rasterized, and
+  read with a local OCR engine (**RapidOCR**, the `[ocr]` extra; Tesseract the
+  alt), so a **scanned PDF reads the same as a typed one** — the OCR'd lines
+  flow through the *exact same* reading pipeline (tagged `source=ocr`), no
+  branching on origin. A typed-only PDF pays nothing of note: the engine is built
+  cheaply (import-only, ~1 ms) but its **model is loaded only when a sparse page
+  actually needs it**. **Without the `[ocr]` extra the reader still runs** and
+  simply leaves a scanned page unread (graceful, never a crash).
 - ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`) + a PDF byte endpoint
   (`/pdf`, with HTTP range support for large files) + a `/ws` transport for
   events + audio.
@@ -61,7 +71,6 @@ listenable). What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🔜 **M3** OCR (RapidOCR) so scanned papers read like text ones.
 - 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
 - 🔜 **M6** hardening: graceful LLM-down, resume checkpoint, more tests.
@@ -185,6 +194,28 @@ distinguishes "extra not installed" (`pip install ".[vision]"`) from
 
 ---
 
+### (Optional) OCR — read scanned / image-only PDFs (M3)
+
+A page with **no text layer** (a scanned or "print-as-image" PDF) is read with a
+local OCR engine so it reads the **same** as a typed one. The default is
+**RapidOCR** (`rapidocr`, fully-local — its models ship with the package, no
+download); **Tesseract** is the alt. The reader **does not depend on it**: without
+the extra a scanned page is simply left unread and the typed pages still read —
+one code path, no crash. A typed-only PDF pays nothing (the engine is built only
+when a page needs it):
+
+```bash
+pip install -e ".[ocr]"          # 1. add RapidOCR (+ pytesseract alt)
+# a scanned PDF is read automatically — no flag, no config:
+ownvoicereader path/to/scanned.pdf            # open it in the viewer
+ownvoicereader path/to/scanned.pdf --auto     # headless read of a scan
+# pick the alt engine / resolution from the OS environment (A6: never persisted):
+#   export OWNVOICEREADER_OCR_ENGINE=tesseract
+#   export OWNVOICEREADER_OCR_DPI=300
+```
+
+---
+
 ## Run
 
 ```bash
@@ -256,7 +287,8 @@ The browser pulls the next cue with a 1-cue lookahead, so **pause/stop are
 instant** and the highlight + transcript follow along.
 
 The **unified `Block`** shape (see `BUILD_PLAN.md` §4) is the contract that
-lets text and OCR feed the *same* reader pipeline later:
+lets text and OCR feed the *same* reader pipeline (M3: a scanned page is read
+via OCR and merged in as `source=ocr` blocks, indistinguishable downstream):
 
 ```
 Block(kind: Text|Figure|Table, source: text|ocr, text, image,
@@ -300,6 +332,8 @@ Environment variables (prefix `OWNVOICEREADER_`):
 | `OWNVOICEREADER_VOICE_DIR` | `~/.cache/ownvoicereader/voices` | Piper voice dir |
 | `OWNVOICEREADER_PIPER_BIN` | auto (env `piper`) | override Piper binary path |
 | `OWNVOICEREADER_ESPEAK_BIN` | auto | override espeak-ng binary path |
+| `OWNVOICEREADER_OCR_ENGINE` | `rapidocr` | OCR engine: `rapidocr` (default) / `tesseract` (M3) |
+| `OWNVOICEREADER_OCR_DPI` | `300` | rasterization resolution for OCR'd pages |
 
 ---
 
@@ -313,7 +347,12 @@ pytest            # hermetic: generates its own PDF fixtures
 M1 adds `tests/test_reading_order.py` (2-column ordering, gutter detection,
 page-number / stray-line filtering, a generated 2-column PyMuPDF PDF) and
 `tests/test_voice.py` (WAV wrapping + style presets; a Piper smoke test that
-skips cleanly when no engine is present).
+skips cleanly when no engine is present). M3 adds `tests/test_ocr.py` — the
+"same shape" contract (OCR `Line`/`Block` tagged `source=ocr`), the pixel→PDF
+geometry mapping, graceful degradation, and a **conditional parity test** that
+reads the scanned CEUR sample with the real engine and checks it recovers the
+typed twin's content (skipping itself when the `[ocr]` extra or sample is
+absent).
 
 ---
 

@@ -54,6 +54,10 @@ class ServerState:
     # Shared local LLM/vision client (built lazily, cached). M2.5.
     llm: object = None
     _llm_tried: bool = False
+    # Shared local OCR engine (built lazily, cached). M3: reads sparse/scanned
+    # pages so a scanned PDF reads like a typed one.
+    ocr: object = None
+    _ocr_tried: bool = False
 
 
 def _free_port(host: str) -> int:

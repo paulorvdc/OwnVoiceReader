@@ -59,15 +59,20 @@ def _overlaps(a: BBox, b: BBox, frac: float = _DEDUP_OVERLAP) -> bool:
 # --------------------------------------------------------------------------- #
 # Tables
 # --------------------------------------------------------------------------- #
-def extract_tables(doc: ReadingDocument, source) -> list[Block]:
+def extract_tables(doc: ReadingDocument, source, skip: Optional[set[int]] = None) -> list[Block]:
     """Return one :class:`Block` (``TABLE``) per table found on every page.
 
-    ``source`` is the open :class:`PdfSource`; its ``find_tables()`` grid is the
-    table's cells, and the table's ``bbox`` (a *tuple* in PyMuPDF 2.1) is its
-    page-space rectangle. A table with no cells is skipped.
+    ``source`` is the open :class:`PdfSource`; ``find_tables()`` yields each
+    table's cell grid and its page-space bbox (a *tuple* in PyMuPDF 2.1); a
+    table with no cells is skipped. ``skip`` (optional) is a set of page numbers
+    to ignore — used by :func:`add_figure_table_blocks` to skip fully-scanned
+    pages, whose single raster is the whole page (the text we OCR), not a table.
     """
+    skip = skip or set()
     out: list[Block] = []
     for pno in range(doc.page_count):
+        if pno in skip:
+            continue
         page = source.doc[pno]
         try:
             tables = page.find_tables().tables
@@ -87,16 +92,21 @@ def extract_tables(doc: ReadingDocument, source) -> list[Block]:
 # --------------------------------------------------------------------------- #
 # Figures
 # --------------------------------------------------------------------------- #
-def extract_figures(doc: ReadingDocument, source) -> list[Block]:
+def extract_figures(doc: ReadingDocument, source, skip: Optional[set[int]] = None) -> list[Block]:
     """Return one :class:`Block` (``FIGURE``) per image region, cropped to a PNG.
 
     Each embedded image region of a page is cropped with ``get_pixmap`` (the
     vector-only case has no raster, so we render whatever raster the page
     carries). Overlapping regions collapse to one figure and tiny regions are
-    dropped, so the output is the page's *figures*, not its icon soup.
+    dropped, so the output is the page's *figures*, not its icon soup. ``skip``
+    (optional) is a set of page numbers to ignore — fully-scanned pages, whose
+    single raster is the whole page rather than a figure.
     """
+    skip = skip or set()
     out: list[Block] = []
     for pno in range(doc.page_count):
+        if pno in skip:
+            continue
         page = source.doc[pno]
         try:
             data = page.get_text("dict")
@@ -151,13 +161,16 @@ def _figure_regions(page, data: dict) -> list[Rect]:
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
-def add_figure_table_blocks(doc: ReadingDocument, source=None) -> int:
+def add_figure_table_blocks(doc: ReadingDocument, source=None,
+                            skip_pages: Optional[set[int]] = None) -> int:
     """Populate ``doc.blocks`` with the page's TABLE and FIGURE blocks.
 
     Runs *after* the reading-ordered text blocks so figures/tables sit in the
-    document in a sensible place. Returns the number of figure/table blocks added.
-    ``source`` is the open :class:`PdfSource`; when omitted one is opened from
-    ``doc.source_path`` and closed afterwards.
+    document in a sensible place. Returns the number of figure/table blocks
+    added. ``source`` is the open :class:`PdfSource`; when omitted one is opened
+    from ``doc.source_path`` and closed afterwards. ``skip_pages`` (optional) is
+    a set of page numbers to ignore — the OCR'd (fully-scanned) pages, whose only
+    raster is the whole page rather than a figure or table.
     """
     owns = source is None
     if owns:
@@ -165,7 +178,8 @@ def add_figure_table_blocks(doc: ReadingDocument, source=None) -> int:
         source = PdfSource.from_path(doc.source_path)
 
     try:
-        added = extract_tables(doc, source) + extract_figures(doc, source)
+        added = (extract_tables(doc, source, skip=skip_pages)
+                 + extract_figures(doc, source, skip=skip_pages))
     finally:
         if owns:
             source.close()

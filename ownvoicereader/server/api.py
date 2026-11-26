@@ -28,15 +28,16 @@ log = logging.getLogger("ownvoicereader.api")
 # Loading helpers (shared with app.py)
 # --------------------------------------------------------------------------- #
 def load_document_by_path(state, path: str) -> None:
-    """Open a PDF on disk, build its reading-ordered text blocks, and record
-    it as the active document."""
+    """Open a PDF on disk, build its reading-ordered text blocks (and OCR any
+    page lacking a text layer, M3), and record it as the active document."""
     try:
         doc = open_pdf(path)
         # M1: build the full reading document (text lines -> ordered blocks +
-        # sparse-page flags). A build failure shouldn't kill the load, so we
-        # fall back to a metadata-only document.
+        # sparse-page flags); M3 also OCRs sparse pages so a scanned PDF reads
+        # like a typed one. A build failure shouldn't kill the load, so we fall
+        # back to a metadata-only document.
         try:
-            build_document(doc)
+            build_document(doc, ocr=get_ocr_engine(state))
         except Exception:  # pragma: no cover - never abort the load
             log.exception("text extraction failed for %s; loading metadata only",
                           path)
@@ -44,8 +45,8 @@ def load_document_by_path(state, path: str) -> None:
         state.pdf_path = doc.source_path
         state.load_error = None
         # A fresh document invalidates any cached TTS voice binding.
-        log.info("loaded document: %s (%d pages, %d blocks)",
-                 doc.title, doc.page_count, len(doc.blocks))
+        log.info("loaded document: %s (%d pages, %d blocks, %d OCR'd)",
+                 doc.title, doc.page_count, len(doc.blocks), len(doc.ocr_pages))
     except Exception as exc:  # surface a friendly message to the UI
         state.load_error = str(exc)
         state.document = None
@@ -78,6 +79,7 @@ def _info_payload(state) -> dict:
             "providers": _provider_names(),
             "voice": voice,
             "vision": _vision_info(state),
+            "ocr": _ocr_info(state),
         }
     return {
         "loaded": True,
@@ -86,6 +88,7 @@ def _info_payload(state) -> dict:
         "providers": _provider_names(),
         "voice": voice,
         "vision": _vision_info(state),
+        "ocr": _ocr_info(state),
     }
 
 
@@ -136,6 +139,27 @@ def get_llm_client(state) -> "Optional[object]":
     return getattr(state, "llm", None)
 
 
+def get_ocr_engine(state) -> "Optional[object]":
+    """Return the shared local OCR engine, building it once and caching it.
+
+    The engine reads *sparse* pages (no text layer) so a scanned PDF reads like a
+    a typed one (M3). Construction is cheap — the heavy OCR model loads lazily on
+    the first sparse page — so this is safe to call on every load. ``None`` (a
+    :class:`NullOcrEngine`) means no OCR engine is installed: sparse pages simply
+    stay unreadable and the typed pages still read (graceful degradation).
+    """
+    if getattr(state, "ocr", None) is None and not getattr(state, "_ocr_tried", False):
+        state._ocr_tried = True
+        try:
+            from ..ingest import build_ocr_engine
+
+            state.ocr = build_ocr_engine()
+        except Exception:  # pragma: no cover - never abort on OCR discovery
+            log.exception("OCR engine discovery failed")
+            state.ocr = None
+    return getattr(state, "ocr", None)
+
+
 def _voice_info(state) -> dict:
     """Report which local voice/style options exist, *without* audio values."""
     engine = get_tts_engine(state)
@@ -154,6 +178,24 @@ def _voice_info(state) -> dict:
         "voices": voices,
         "default_voice": getattr(engine, "_voice", None),
         "styles": style_names(),
+    }
+
+
+def _ocr_info(state) -> dict:
+    """Report which OCR engine is in use for the UI, *without* touching the model.
+
+    ``available`` is False when only the graceful :class:`NullOcrEngine` is in
+    hand (no ``[ocr]`` extra installed) — then sparse pages stay unreadable. The
+    check is cache-only: :func:`get_ocr_engine` builds the wrapper lazily and the
+    heavy model loads only on the first sparse page, so this never blocks a load.
+    """
+    engine = get_ocr_engine(state)
+    name = getattr(engine, "name", None)
+    installed = engine is not None and name != "null"
+    return {
+        "available": bool(installed and getattr(engine, "available", False)),
+        "installed": bool(installed),
+        "engine": name,
     }
 
 

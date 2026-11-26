@@ -211,11 +211,15 @@ def _merge_into_blocks(column_lines: list[Line]) -> list[Block]:
         # body block has no bold line.
         font_size = max(ln.font_size for ln in cur_lines)
         main = max(cur_lines, key=lambda ln: len(ln.text))
+        # All lines in a block share a page's origin: a fully-scanned page yields
+        # all-OCR lines, a typed page all-TEXT lines, so the block's source is the
+        # first line's (they never mix within a page).
         blocks.append(
             Block.text_block(
                 text,
                 cur_lines[0].page,
                 BBox(x0, y0, x1, y1),
+                source=cur_lines[0].source,
                 font_size=round(font_size, 2),
                 is_bold=main.is_bold,
             )

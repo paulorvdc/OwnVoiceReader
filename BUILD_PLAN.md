@@ -312,12 +312,46 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > `orch.explain_markers` toggles the bookends (default on). The headless summary now reports
 > *spoken units* vs *text cues* (e.g. **266 / 253** on ACM). +7 tests → **132 pass.**_
 
-### M3 — OCR (text/OCR interchangeable)  _status: [ ] not started_
-- [ ] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer
-- [ ] OCR emits the **same `Block` shape** as `text_extractor`
-- [ ] **parity test**: a scanned paper reads identically to a text-based one
+### M3 — OCR (text/OCR interchangeable)  _status: [x] done · listenable_
+- [x] `ingest/ocr.py` — **RapidOCR** fallback for pages/regions without a text layer
+- [x] OCR emits the **same `Block` shape** as `text_extractor`
+- [x] **parity test**: a scanned paper reads identically to a text-based one
 - [ ] maybe use the OCR to help confirm the table and figure captions limits
-> 📝 comment:
+> 📝 comment: _**M3 done + verified 2026-11-26.** New `ingest/ocr.py` — the OCR side of the
+> "interchangeable contract" (§4): a scanned page reads the same as a typed one, with **no
+> downstream branching on origin**.
+> - **Shape:** the OCR path emits the **same** `Line`/`Block` shape as the text layer, tagged
+>   `source = BlockSource.OCR` (new on `Line` + propagated through `reading_order` → `Block`).
+>   OCR leaves `font_size`/`is_bold` at their defaults (a scan has no font metadata) — the shape
+>   is identical; only the *cue* is honestly absent.
+> - **Pipeline:** `flag_sparse_pages` (< 30 chars) already marks the OCR candidates; for each we
+>   rasterize (`get_pixmap`, 300 dpi) and run an `OcrEngine`, mapping each line's pixel box back
+>   to PDF user space (`pdf_x = rect.x0 + px/scale`) and merging the `Line`s with the text layer,
+>   so one `reading_order` pass reads scanned + typed pages together.
+> - **Engine abstraction** (mirrors `tts_engine`/`llm/client`): `RapidOcrEngine` (default, A4 —
+>   the `rapidocr` lib, fully-local, models ship with the package), `TesseractEngine` (alt —
+>   `pytesseract` over the system binary, PSM 6), and a graceful `NullOcrEngine` (the "OCR off"
+>   state: reports unavailable, yields nothing, the reader degrades to text-only — never crashes).
+>   `build_ocr_engine` picks the best available (RapidOCR → Tesseract → null); `OWNVOICEREADER_OCR_ENGINE`
+>   / `OWNVOICEREADER_OCR_DPI` override.
+> - **Wiring:** `build_document(ocr=…)` OCRs sparse pages and merges them; **skips figure/table
+>   extraction on fully-scanned pages** (a scan's single raster is the whole page, not a figure).
+>   Server: `get_ocr_engine(state)` caches one engine (the model loads lazily on
+>   the first *sparse* page — building the engine is import-only, ~1 ms);
+>   `/api/info` reports an `ocr` status. A text-only PDF pays nothing of note —
+>   the engine is built cheaply but its model is never loaded.
+> - **`pyproject`:** `ocr` extra now `rapidocr>=3.0` (+ `pytesseract`) — the old
+>   `rapidocr-onnxruntime` line caps at Python <3.13, so the maintained `rapidocr` package is used.
+> - **Calibration (real `rapidocr` on the new CEUR sample pair):** the typed `1-column_ceur.pdf`
+>   reads 23,564 chars / 53 blocks; its scanned twin `1-column_ceur_scanned.pdf` is **OCR'd to
+>   22,893 chars / 34 blocks (~97% recovery)** — every block `source=ocr`. Listenable proof at
+>   `/tmp/opencode/m3_scanned_ocr.wav` (8 OCR'd cues, Piper). **Parity test**
+>   (`test_parity_scanned_reads_like_text`) asserts the scan recovers the typed twin's content
+>   (skips itself if the `[ocr]` extra or the sample is absent). **+14 tests → 146 pass.**
+>
+> _**Limits → later:** OCR'd lines have no font cues (section detection is weaker on scans — an
+> M5 concern); a text-less page with OCR *off* still surfaces its raster as a display figure (the
+> spoken path is unaffected); the "use OCR to confirm caption limits" stretch goal is deferred._
 
 ### M4 — Config & models  _status: [ ] not started_
 - [ ] `config.py` — layering: defaults → `~/.ownvoicereader/config.yaml` → env `OWNVOICEREADER_*` → CLI flags
