@@ -10,8 +10,9 @@
  *   - a WebSocket to /ws that streams reading events + WAV audio
  *   - an HTML5 <audio> element that plays the streamed audio (A9)
  *   - play / pause / stop + section & paragraph navigation controls
- *   - a "now reading" bar, a transcript, and a highlight overlay that follows
- *     the text being spoken (page + bbox).
+ *   - a "now reading" bar, a transcript, and auto page-scroll that follows the
+ *     text being spoken (the cue's page). M5 C1 scrapped the PDF overlay
+ *     highlight; C3/C4 will add a transcript-based follow-along instead.
  */
 (function () {
   "use strict";
@@ -56,8 +57,6 @@
     nowSection: $("now-section"),
     transcript: $("transcript"),
     transcriptToggle: $("transcript-toggle"),
-    overlay: $("highlight-overlay"),
-    highlightBox: $("highlight-box"),
     audioOut: $("audio-out"),
   };
 
@@ -169,10 +168,6 @@
     }
   }
 
-  // The page currently rendered, retained so the highlight overlay can map
-  // PDF user-space bboxes to canvas pixels after a re-render.
-  let lastViewport = null;
-
   async function renderPage() {
     if (!pdfDoc) return;
     const my = ++renderVersion;
@@ -181,15 +176,11 @@
       if (my !== renderVersion) return; // a newer render superseded this one
 
       const viewport = page.getViewport({ scale });
-      lastViewport = viewport;
       const dpr = window.devicePixelRatio || 1;
       el.canvas.width = Math.floor(viewport.width * dpr);
       el.canvas.height = Math.floor(viewport.height * dpr);
       el.canvas.style.width = Math.floor(viewport.width) + "px";
       el.canvas.style.height = Math.floor(viewport.height) + "px";
-      // size the overlay to match the canvas
-      el.overlay.style.width = el.canvas.style.width;
-      el.overlay.style.height = el.canvas.style.height;
       const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
 
       const task = page.render({ canvasContext: ctx, viewport, transform });
@@ -198,32 +189,9 @@
 
       el.pageInput.value = String(pageNum);
       el.zoomLabel.textContent = Math.round(scale * 100) + "%";
-      // Redraw the highlight for the current cue (if it belongs to this page).
-      if (reader && reader.currentBBox && reader.currentPage === pageNum - 1) {
-        positionHighlight(reader.currentBBox);
-      } else {
-        el.overlay.style.display = "none";
-      }
     } catch (e) {
       setStatus("render error: " + e.message, "err");
     }
-  }
-
-  function positionHighlight(bbox) {
-    // bbox is PDF user space (origin top-left, points). The viewport maps
-    // user space -> canvas pixels at the current scale.
-    const vp = lastViewport || { transform: (p) => p };
-    const tl = vp.transform([bbox.x0, bbox.y0]);
-    const br = vp.transform([bbox.x1, bbox.y1]);
-    const x = Math.max(0, Math.min(tl[0], br[0]));
-    const y = Math.max(0, Math.min(tl[1], br[1]));
-    const w = Math.abs(br[0] - tl[0]);
-    const h = Math.abs(br[1] - tl[1]);
-    el.highlightBox.style.left = x + "px";
-    el.highlightBox.style.top = y + "px";
-    el.highlightBox.style.width = w + "px";
-    el.highlightBox.style.height = h + "px";
-    el.overlay.style.display = "block";
   }
 
   function gotoPage(n) {
@@ -298,14 +266,18 @@
       this.playing = false;
       this.queue = [];           // pending Audio objects (lookahead buffer)
       this.current = null;       // the Audio currently playing
+      // M5 C1: each queued Audio carries the event + transcript line that
+      // produced it, so "now reading" can be keyed to *playback start* rather
+      // than to when the event arrived — the lookahead can make the server
+      // *produce* the next cue a beat before it is actually heard.
+      this._pendingAudioEvent = null;
+      this._pendingLine = null;
       this.waitingForCue = false;
       this.expectingAudio = false;
       this.audioMeta = null;
       this._jumping = false;   // a section jump is in flight (hold stale cues)
       this.cueCount = 0;
       this.pos = 0;
-      this.currentPage = null;
-      this.currentBBox = null;
       this.voice = null;
       this.vision = null;
       // M4: live settings (mirrored onto the UI; sent back on a `state` frame).
@@ -432,31 +404,32 @@
       // Hold stale cues produced by a `continue` that was in flight *before* a
       // section jump — the jump's `state` frame resyncs the counter + section.
       if (this._jumping) return;
-      // Transcript + "now reading" + follow-along highlight.
-      this.addTranscript(ev.text, this._lineClass(ev));
-      el.nowText.textContent = ev.text || "…";
-      // Live cue counter + "now reading" section chip (M1.5 checkpoint 2): the
-      // counter advances as each cue is spoken, not only on a pause.
-      if (ev.meta) {
-        if (ev.meta.index != null) this.setProgress(ev.meta.index + 1, this.cueCount);
-        if (ev.meta.section) this.updateSection(ev.meta.section);
-      }
-      if (ev.page != null) {
-        this.currentPage = ev.page;
-        this.currentBBox = ev.meta && ev.meta.bbox ? ev.meta.bbox : null;
-        const targetPage = ev.page + 1; // PDF.js pages are 1-based
-        if (targetPage !== pageNum) {
-          gotoPage(targetPage);
-        } else if (this.currentBBox) {
-          positionHighlight(this.currentBBox);
-        }
-      }
-      // A `notice` event carries no audio (e.g. a TTS failure the server skipped).
-      // Clear the "waiting for this cue's audio" flag and pull the next cue so the
-      // stream doesn't stall on a cue that produced no sound.
-      if (ev.type === "notice") {
+      // Append the cue's transcript line now, but DO NOT mark it "current" or move
+      // "now reading" yet. With the lookahead buffer the server can *produce* the
+      // next cue a beat before it is actually heard, so keying "now reading" off the
+      // event is what made it jump to the next cue too soon (M5 C1). Instead the line
+      // becomes "current" — and "now reading" (text / section chip / counter /
+      // PDF page) follows it — when its audio *starts playing* (pump), or
+      // immediately for cues that produce no audio (a notice, or voice-off mode).
+      const line = this.addTranscript(ev.text, this._lineClass(ev));
+      const hasAudio = ev.type !== "notice" && this.voice && this.voice.available;
+      if (hasAudio) {
+        // Stash the event + its transcript line for the audio that's coming; pump()
+        // keys "now reading" to it when that audio actually starts to play.
+        this._pendingAudioEvent = ev;
+        this._pendingLine = line;
+      } else if (ev.type === "notice") {
+        // A TTS failure: the cue produced no sound, so keep "now reading" on the
+        // last *heard* cue — but its position did advance, so update the counter,
+        // section chip, and PDF page (not the now-reading text), then pull the next
+        // cue so the stream doesn't stall on a cue that produced no sound.
+        this._setNowReading(ev, null, false);
         this.waitingForCue = false;
         this.maybeFetchMore();
+      } else {
+        // No TTS (voice-off mode): nothing will be *heard*, so show this cue as
+        // "now reading" the moment it arrives, the way the reader advanced before.
+        this._setNowReading(ev, line);
       }
     }
 
@@ -479,6 +452,12 @@
       const blob = new Blob([data], { type: "audio/wav" });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      // M5 C1: bind this Audio to the event + transcript line that produced it, so
+      // pump() can key "now reading" to *this* audio starting to play.
+      audio._event = this._pendingAudioEvent;
+      audio._line = this._pendingLine;
+      this._pendingAudioEvent = null;
+      this._pendingLine = null;
       this.queue.push(audio);
       // A cue fully arrived: we may fetch the next one (lookahead).
       this.waitingForCue = false;
@@ -491,13 +470,29 @@
       if (!this.playing) return;
       if (this.current) return;
       if (this.queue.length) {
-        this.current = this.queue.shift();
-        this.current.onended = () => {
+        const cue = this.queue.shift();
+        // M5 C1: wire the *critical* audio path FIRST — the onended callback that
+        // advances to the next cue, then play() — so a failure in the purely
+        // cosmetic "now reading" update below can never stall the reader. That
+        // coupling was the C1 regression: an update that threw or hung left
+        // this.current set-but-unplayed, so onended never fired, the next cue
+        // never came up, and cues were dropped.
+        cue.onended = () => {
           this.current = null;
           this.pump();
           this.maybeFetchMore();
         };
-        try { this.current.play(); } catch (_) { /* autoplay may be blocked */ }
+        this.current = cue;
+        try { cue.play(); } catch (_) { /* autoplay may be blocked */ }
+        // M5 C1: key "now reading" (text / section chip / counter / PDF page /
+        // transcript current line) to the cue that is now being heard.
+        // It is guarded because it is cosmetic and must not be able to break the
+        // audio pump — a throw here must not drop the next cue.
+        try {
+          this._setNowReading(cue._event, cue._line);
+        } catch (err) {
+          console.warn("OwnVoiceReader: 'now reading' update failed", err);
+        }
         return;
       }
       this.maybeFetchMore();
@@ -568,7 +563,6 @@
         this.current = null;
         this.queue.length = 0;
         this.waitingForCue = false;
-        el.overlay.style.display = "none";
         el.btnPlay.textContent = "▶";
         el.nowText.textContent = "stopped — ready to play from the start";
         this.setProgress(0, this.cueCount);
@@ -615,10 +609,9 @@
       if (this.current) { this.current.pause(); this.current = null; }
       this.queue.length = 0;
       this.waitingForCue = false;
+      this._pendingAudioEvent = null;
+      this._pendingLine = null;
       this.pos = 0;
-      this.currentPage = null;
-      this.currentBBox = null;
-      el.overlay.style.display = "none";
       el.btnPlay.textContent = "▶";
       this.send({ cmd: "stop" });
       this.setProgress(0, this.cueCount);
@@ -651,8 +644,9 @@
       this.queue.length = 0;
       this.waitingForCue = false;
       this.expectingAudio = false;
+      this._pendingAudioEvent = null;
+      this._pendingLine = null;
       this._jumping = true;
-      el.overlay.style.display = "none";
       el.btnPlay.textContent = "⏸";
       setStatus(statusText, "");
       this.send({ cmd });
@@ -832,19 +826,55 @@
       el.progress.textContent = `${pos || 0}/${n || 0}`;
     }
 
+    // Append a transcript line. M5 C1: it no longer marks itself "current" or
+    // auto-scrolls — that is deferred to when the cue is actually *heard*
+    // (_setNowReading / _markCurrentLine), so the lookahead can't pull the
+    // "current" marker ahead of the audio. Returns the created element so the
+    // caller can bind it to the cue's audio.
     addTranscript(text, cls) {
       const line = document.createElement("div");
       line.className = "line" + (cls ? " " + cls : "");
-      // mark the previous current line as no longer current
-      const prev = el.transcript.querySelector(".line.current");
-      if (prev) prev.classList.remove("current");
       line.textContent = text;
-      if (cls !== "notice") line.classList.add("current");
       el.transcript.appendChild(line);
       // keep the transcript from growing unbounded
       while (el.transcript.children.length > 400) el.transcript.removeChild(el.transcript.firstChild);
+      return line;
+    }
+
+    // M5 C1: the single place "now reading" is driven — the now-reading text, the
+    // section chip, the cue counter, the auto page-scroll, and the transcript's
+    // current line, all keyed to the cue that is being *heard*. Called at playback
+    // start (pump) for cues with audio, and at event arrival for cues that produce
+    // no sound. `updateText` is false for a notice (keep "now reading" on the last
+    // *spoken* cue while its position still advances).
+    _setNowReading(ev, lineEl, updateText = true) {
+      if (!ev) return;
+      if (updateText) el.nowText.textContent = ev.text || "…";
+      if (ev.meta) {
+        // Live cue counter + "now reading" section chip (M1.5 checkpoint 2): the
+        // counter advances as each cue is *spoken*, not only on a pause.
+        if (ev.meta.index != null) this.setProgress(ev.meta.index + 1, this.cueCount);
+        if (ev.meta.section) this.updateSection(ev.meta.section);
+      }
+      if (ev.page != null) {
+        // Auto-scroll the PDF to the cue's page so the reader stays on the page
+        // being heard. (The PDF overlay highlight was scrapped in M5 C1 — C3/C4
+        // add a transcript-based follow-along instead; this keeps the page jump
+        // that predates it, which the user wants retained.)
+        const targetPage = ev.page + 1; // PDF.js pages are 1-based
+        if (targetPage !== pageNum) gotoPage(targetPage);
+      }
+      if (lineEl) this._markCurrentLine(lineEl);
+    }
+
+    _markCurrentLine(lineEl) {
+      const prev = el.transcript.querySelector(".line.current");
+      if (prev && prev !== lineEl) prev.classList.remove("current");
+      lineEl.classList.add("current");
+      // Keep the line being heard in view (scrolls the transcript only when the
+      // current line is off-screen; a no-op while the transcript is closed).
       if (el.transcript.classList.contains("open")) {
-        el.transcript.scrollTop = el.transcript.scrollHeight;
+        lineEl.scrollIntoView({ block: "nearest" });
       }
     }
   }
@@ -864,7 +894,6 @@
     el.transcript.innerHTML = "";
     el.nowText.textContent = "…";
     if (el.nowSection) el.nowSection.textContent = "";
-    el.overlay.style.display = "none";
     reader = new Reader();
     reader.connect();
   }

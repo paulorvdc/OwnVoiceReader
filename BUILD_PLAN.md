@@ -409,12 +409,15 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > fields (`PERSIST_FIELDS`), and a save with *every* credential exported writes none to
 > disk (while the host still is). +13 tests → **202**, +1 guard → **203 pass.**_
 
-### M5 — UI revamp  _status: [ ] not started_
-- [ ] make sure the cue being read is the one in now reading at all times as it changes to the next cue to soon in previous versions
+### M5 — UI revamp  _status: [~] in progress_
+- [x] make sure the cue being read is the one in now reading at all times as it changes to the next cue to soon in previous versions
+  - _✅ **C1 done.** "now reading" (text / section chip / cue counter / transcript current-line) + auto page-scroll all key off the cue being *heard*, not the one the server merely produced — the lookahead buffer was making it jump to the next cue too soon. The PDF **overlay highlight was scrapped** (it went off-track on section/block jumps); C3/C4 add a transcript-based follow-along instead. `pump()` wires the critical path first (`onended`→`play()`) and runs the cosmetic now-reading update *guarded* so it can never stall the audio.
 - [ ] make a light UI with high contrast as default but give a dark high contrast option. also add a dracula theme
 - [ ] change to the now reading and transcript parts of the UI: text (particularly now reading) should have high contrast an larger for low-vision users (primary target of this tool). previous cues and forward cues should also show up similar the lyrics UI in Apple Music instead of the block system in place for previous milestones ![lyricsUI](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTnxUzHYsARyk4-WAldA5Gc-DO6YlAn45W3kaIATVcuBryai1UxxX0iHHv_&s=10)
 - [ ] transcript block can stay next to the paper when screen space is afforded
 - [ ] show markdown version of table and the figure being explained whenever that's happening on the new transcript/now reading UI
+- [ ] buttons to change model, host, voice and save should be in the top bar. bottom bar will only have the media and pdf viewer controls
+- [ ] unify icon style with a single minimalist icon pack (maybe give me some options)
 > 📝 comment:
 
 ### M6 — Packaging (later, post-v1)  _status: [ ] not started_
