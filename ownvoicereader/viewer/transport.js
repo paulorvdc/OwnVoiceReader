@@ -44,6 +44,13 @@
     progress: $("progress"),
     styleSelect: $("style-select"),
     voiceSelect: $("voice-select"),
+    // M4: live model picker + local-only toggle + "Save settings" button.
+    modelSelect: $("model-select"),
+    localOnlyChk: $("local-only-chk"),
+    saveSettings: $("save-settings"),
+    // M4: the Ollama host input + the "Refresh models" button (re-point + re-probe).
+    ollamaHost: $("ollama-host"),
+    refreshModels: $("refresh-models"),
     nowReading: $("now-reading"),
     nowText: $("now-text"),
     nowSection: $("now-section"),
@@ -62,6 +69,9 @@
   let renderVersion = 0;
   let currentDoc = null;   // the /api/info document object
   let info = null;         // last /api/info payload
+  // M4: the user may have typed a host into the input — once they do, a `hello`
+  // pre-fill must NOT clobber it (e.g. after a "Change PDF" opens a new connection).
+  let hostEdited = false;
 
   const ctx = el.canvas.getContext("2d");
 
@@ -298,6 +308,10 @@
       this.currentBBox = null;
       this.voice = null;
       this.vision = null;
+      // M4: live settings (mirrored onto the UI; sent back on a `state` frame).
+      this.model = null;
+      this.style = null;
+      this.localOnly = true;
       this.onStatus = null;
       this.reconnectAttempts = 0;
       this._reconnectGaveUp = false;
@@ -363,6 +377,11 @@
         case "state":
           this.onState(msg);
           break;
+        case "vision":
+          // M4: a `set_ollama_host` reply — the fresh probe repopulates the picker
+          // + badge and reflects the host the reader now points at.
+          this.onVisionRefresh(msg);
+          break;
         case "notice":
           this.addTranscript(msg.text, "notice");
           setStatus(msg.text, "ok");
@@ -376,9 +395,28 @@
     onHello(msg) {
       this.cueCount = msg.cue_count || 0;
       this.voice = msg.voice || { available: false };
-      this.vision = msg.vision || { available: false, installed: false, model: null };
+      this.vision = msg.vision || { available: false, installed: false, model: null, models: [] };
+      // M4: the current live settings come from the orchestrator's status frame.
+      const st = msg.state || {};
+      this.style = st.style || "academic-calm";
+      this.model = st.llm_model || this.vision.model || null;
+      this.localOnly = st.local_only !== undefined ? st.local_only : true;
+      if (el.localOnlyChk) el.localOnlyChk.checked = this.localOnly;
       this.updateVoiceUI();
+      this.updateModelUI();
       this.updateVisionUI();
+      if (el.saveSettings) el.saveSettings.disabled = false;
+      // M4: pre-fill the Ollama host from where the client actually points (the
+      // vision info carries the effective host); enable the input + "Refresh".
+      // Don't clobber a host the user has typed — a "Change PDF" reconnection would
+      // otherwise wipe it.
+      if (el.ollamaHost) {
+        el.ollamaHost.disabled = false;
+        if (!hostEdited) {
+          el.ollamaHost.value = this.vision.host || el.ollamaHost.placeholder;
+        }
+      }
+      if (el.refreshModels) el.refreshModels.disabled = false;
       if (this.cueCount === 0) {
         this.enableControls(false);
         setStatus("no readable text found in this PDF", "err");
@@ -492,6 +530,16 @@
       if (s.voice) { this.voice.voice = s.voice; }
       if (s.style && el.styleSelect && el.styleSelect.value !== s.style) {
         el.styleSelect.value = s.style;
+      }
+      // M4: a `set_model` / `set_local_only` reply carries the new value back so
+      // the picker + toggle resync (and so another tab's choice is reflected).
+      if (s.llm_model != null && el.modelSelect) {
+        this.model = s.llm_model;
+        if (el.modelSelect.value !== s.llm_model) el.modelSelect.value = s.llm_model;
+      }
+      if (s.local_only != null && el.localOnlyChk) {
+        this.localOnly = s.local_only;
+        el.localOnlyChk.checked = s.local_only;
       }
       if (s.section) this.updateSection(s.section);
       // A `next_section`/`prev_section` reply: the server moved the playhead and
@@ -643,6 +691,7 @@
       const styles = (this.voice && this.voice.styles) || ["academic-calm", "quick-scan", "narrative", "lecture"];
       el.styleSelect.innerHTML = styles.map((s) => `<option value="${s}">${s}</option>`).join("");
       el.styleSelect.disabled = false;
+      if (this.style) el.styleSelect.value = this.style;
       el.styleSelect.onchange = () => this.send({ cmd: "set_style", style: el.styleSelect.value });
       const voices = (this.voice && this.voice.voices) || [];
       if (voices.length) {
@@ -668,10 +717,10 @@
 
     // A read-only status badge for the vision LLM (M2.5): green + the model in
     // use when it is reachable, red ("off") when it is not — so the user knows to
-    // start Ollama / pull the model. The model comes from the server's hello
-    // (`this.vision.model`), which is the *configured* client model; there is no
-    // picker (that is M4). Idempotent: clear any prior vision badge first so a
-    // reconnect does not stack duplicates.
+    // start Ollama / pull the model. The badge shows *status*; the model *picker*
+    // in the settings group (updateModelUI) is the M4 control for switching it.
+    // Idempotent: clear any prior vision badge first so a reconnect does not
+    // stack duplicates.
     updateVisionUI() {
       el.docInfo.querySelectorAll(".badge.vision, .badge.vision-off")
         .forEach((n) => n.remove());
@@ -691,6 +740,91 @@
         el.docInfo.insertAdjacentHTML(
           "beforeend",
           ' <span class="badge vision-off" title="Install the vision extra:  pip install &quot;ownvoicereader[vision]&quot;">vision: off</span>');
+      }
+    }
+
+    // M4: the model picker. Options are the model ids the local Ollama server
+    // reports (`vision.models`, cache-only from the last probe); the current model
+    // is always present so a value outside the server's list is still selectable.
+    // Switching the model is live (a `state` frame resyncs it) and persists on a
+    // "Save" click. When the [vision] extra is absent there are no models, so the
+    // picker just shows the configured value (setting it has no live effect until
+    // vision is installed, but it is saved for next time).
+    updateModelUI() {
+      const v = this.vision || { installed: false, model: null, models: [] };
+      const models = Array.from(new Set(
+        (v.models || []).concat(v.model ? [v.model] : []).filter(Boolean)
+      ));
+      if (models.length) {
+        el.modelSelect.innerHTML = models.map((m) =>
+          `<option value="${escapeHtml(m)}">${m}</option>`).join("");
+        el.modelSelect.disabled = false;
+        if (this.model) el.modelSelect.value = this.model;
+      } else {
+        el.modelSelect.innerHTML =
+          `<option value="${escapeHtml(v.model || "")}">${v.model || "(no vision model)"}</option>`;
+        el.modelSelect.disabled = false;
+      }
+      el.modelSelect.title = v.installed
+        ? "Vision / LLM model (local Ollama)"
+        : "Vision extra not installed — set your preferred model for next time";
+      el.modelSelect.onchange = () => this.send({ cmd: "set_model", llm_model: el.modelSelect.value });
+    }
+
+    // M4: the "Refresh models" button. Points the vision client at the host typed in
+    // the input and asks the server to re-probe; the `vision` reply (onVisionRefresh)
+    // repopulates the picker + badge — no page reload. An empty input means "default
+    // Ollama host" (the OLLAMA_HOST env var or http://localhost:11434).
+    refreshModels() {
+      const host = el.ollamaHost ? el.ollamaHost.value.trim() : null;
+      this.send({ cmd: "set_ollama_host", host: host || null });
+      setStatus("pointing vision at " + (host || "default Ollama host") +
+        " — refreshing models…", "");
+    }
+
+    // M4: a `set_ollama_host` reply. Repopulate the picker + badge from the fresh
+    // probe and reflect the host the reader is now pointing at in the input.
+    onVisionRefresh(msg) {
+      this.vision = msg.vision || this.vision;
+      if (el.ollamaHost) {
+        el.ollamaHost.value = msg.host || this.vision.host || el.ollamaHost.value;
+      }
+      this.updateVisionUI();
+      this.updateModelUI();
+      const v = this.vision || {};
+      if (v.available) {
+        setStatus("vision ready: " + (v.model || "?") + " at " + (v.host || "?") +
+          " · " + (v.models || []).length + " model(s)", "ok");
+      } else if (v.installed) {
+        setStatus("no reachable vision model at " + (v.host || "?") +
+          " — start Ollama / pull a model", "");
+      } else {
+        setStatus("vision extra not installed — set a host for next time", "");
+      }
+    }
+
+    // M4: the "Save" button. Persists the *current* UI settings to config.yaml via
+    // POST /api/save (a durable, deliberate action — settings are NOT auto-saved on
+    // every change). Empty picker values (e.g. the voice-off placeholder) send null
+    // so the server leaves them at their current value rather than blanking them.
+    // The Ollama host is persisted too (a non-secret endpoint the user can point at).
+    async saveSettings() {
+      const body = {
+        voice: el.voiceSelect.value || null,
+        style: el.styleSelect.value || null,
+        llm_model: el.modelSelect.value || null,
+        ollama_host: el.ollamaHost ? el.ollamaHost.value.trim() || null : null,
+        local_only: el.localOnlyChk ? el.localOnlyChk.checked : null,
+      };
+      try {
+        const data = await getJSON("/api/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        setStatus("settings saved to " + (data.path || "config"), "ok");
+      } catch (e) {
+        setStatus("could not save settings: " + e.message, "err");
       }
     }
 
@@ -772,6 +906,23 @@
     // rolls back one cue rather than to the current section's start.
     el.btnNextCue.addEventListener("click", () => { if (reader) reader.nextCue(); });
     el.btnPrevCue.addEventListener("click", () => { if (reader) reader.prevCue(); });
+    // M4: the "Save settings" button persists the current pickers to config.yaml.
+    el.saveSettings.addEventListener("click", () => { if (reader) reader.saveSettings(); });
+    // M4: the "Refresh models" button re-points the vision client at the host typed in
+    // the input and re-probes it (a `vision` reply repopulates the picker + badge).
+    el.refreshModels.addEventListener("click", () => { if (reader) reader.refreshModels(); });
+    // M4: the host input is typeable from the start (not gated on a document load);
+    // once the user types, flag it so a later `hello` pre-fill won't clobber it.
+    if (el.ollamaHost) {
+      el.ollamaHost.disabled = false;
+      el.ollamaHost.addEventListener("input", () => { hostEdited = true; });
+    }
+    // The local-only toggle is live (a `set_local_only` frame resyncs it); the
+    // model + voice + style pickers wire their `change` handlers in updateModelUI /
+    // updateVoiceUI so they reference the current reader.
+    el.localOnlyChk.addEventListener("change", () => {
+      if (reader) reader.send({ cmd: "set_local_only", local_only: el.localOnlyChk.checked });
+    });
     // "Change PDF" loads a different document on the fly (no server restart):
     // it reuses the landing's hidden file input + the uploadFile → onDocument
     // flow, which tears down the old reader/WS and loads the new document.

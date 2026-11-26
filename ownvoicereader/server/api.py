@@ -10,6 +10,7 @@ so the user can see which secrets the OS environment exposes (A6).
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -18,14 +19,10 @@ from typing import Optional
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 
-from ..config import provider_env
+from ..config import default_config_path, provider_env
 from ..ingest import open_pdf, build_document
 
 log = logging.getLogger("ownvoicereader.api")
-
-
-# --------------------------------------------------------------------------- #
-# Loading helpers (shared with app.py)
 # --------------------------------------------------------------------------- #
 def load_document_by_path(state, path: str) -> None:
     """Open a PDF on disk, build its reading-ordered text blocks (and OCR any
@@ -68,9 +65,43 @@ def load_uploaded(state, content: bytes, filename: str) -> None:
     load_document_by_path(state, str(dest))
 
 
+def save_settings(state, *, voice=None, style=None, llm_model=None,
+                  ollama_host=None, local_only=None, playback=None,
+                  path=None) -> dict:
+    """Apply the user's chosen settings to the live config and persist them to
+    config.yaml (the "Save" button, M4).
+
+    Each provided value updates ``state.config`` (so it takes effect live for the
+    next document load / re-read); unset ones are left as-is. The host (``ollama_host``)
+    points the vision client at a different Ollama server; a credential is *never*
+    among these fields. The whole
+    :class:`~ownvoicereader.config.Config` is then written via the layering
+    (defaults -> this file -> env -> CLI), so the file holds *only* the
+    user's durable choices. Returns ``{"path", "settings"}`` for the UI.
+    """
+    from ..config import save_config
+
+    cfg = state.config
+    if voice is not None:
+        cfg.voice = voice
+    if style is not None:
+        cfg.style = style
+    if llm_model is not None:
+        cfg.llm_model = llm_model
+    if ollama_host is not None:
+        cfg.ollama_host = ollama_host or None
+    if local_only is not None:
+        cfg.local_only = bool(local_only)
+    if playback is not None:
+        cfg.playback = playback
+    written = save_config(cfg, path)
+    return {"path": str(written), "settings": cfg.to_yaml_dict()}
+
+
 def _info_payload(state) -> dict:
     """The JSON the viewer uses to decide what to show."""
     voice = _voice_info(state)
+    settings = _settings_payload(state)
     if state.document is None:
         return {
             "loaded": False,
@@ -80,6 +111,7 @@ def _info_payload(state) -> dict:
             "voice": voice,
             "vision": _vision_info(state),
             "ocr": _ocr_info(state),
+            "settings": settings,
         }
     return {
         "loaded": True,
@@ -89,6 +121,26 @@ def _info_payload(state) -> dict:
         "voice": voice,
         "vision": _vision_info(state),
         "ocr": _ocr_info(state),
+        "settings": settings,
+    }
+
+
+def _settings_payload(state) -> dict:
+    """The *current* settings the viewer pre-fills its pickers from, plus where
+    they are saved. At page load this reflects the config layers (yaml -> env ->
+    CLI); live in-session changes (M4) are reflected back via WS ``state`` frames
+    and persisted by ``POST /api/save``."""
+    from ..llm import resolve_model
+
+    cfg = state.config
+    return {
+        "voice": cfg.voice,
+        "style": cfg.style or "academic-calm",
+        "llm_model": cfg.llm_model or resolve_model(cfg),
+        "ollama_host": cfg.ollama_host,
+        "local_only": cfg.local_only,
+        "playback": cfg.playback,
+        "config_path": str(default_config_path()),
     }
 
 
@@ -217,12 +269,17 @@ def _vision_info(state, *, probe: bool = False) -> dict:
     blocks page load.
     """
     from ..llm import resolve_model
+    from ..llm.client import DEFAULT_HOST
 
     client = get_llm_client(state)
     installed = client is not None and getattr(client, "name", "null") != "null"
     model = getattr(client, "model", None) or resolve_model(state.config)
+    # M4: the host the client points at (saved / OLLAMA_HOST / default), so the
+    # viewer's "Refresh models" can show where the reader is looking.
+    host = getattr(client, "effective_host", None) or os.environ.get("OLLAMA_HOST") or DEFAULT_HOST
     if not installed:
-        return {"available": False, "installed": False, "model": model}
+        return {"available": False, "installed": False, "model": model,
+                "models": [], "host": host}
     if probe:
         refresh = getattr(client, "refresh", None)
         if callable(refresh):
@@ -231,7 +288,11 @@ def _vision_info(state, *, probe: bool = False) -> dict:
         available = bool(client.available)
     except Exception:  # pragma: no cover - the property already guards itself
         available = False
-    return {"available": available, "installed": True, "model": model}
+    # The model list is cache-only (populated by the last probe / the WS hello),
+    # so this never triggers a network round-trip on the REST path.
+    models = getattr(client, "list_cached_models", lambda: [])()
+    return {"available": available, "installed": True, "model": model,
+            "models": models, "host": host}
 
 
 # --------------------------------------------------------------------------- #
@@ -271,5 +332,21 @@ def build_api_router(state) -> APIRouter:
         state.pdf_path = None
         state.load_error = None
         return JSONResponse(_info_payload(state))
+
+    @router.post("/save")
+    async def save(body: dict) -> JSONResponse:
+        """Persist the viewer's current settings to config.yaml (the "Save"
+        button, M4). Applies the provided fields to the live config and writes
+        them to ``$OWNVOICEREADER_CONFIG`` or ``~/.ownvoicereader/config.yaml``."""
+        saved = save_settings(
+            state,
+            voice=body.get("voice"),
+            style=body.get("style"),
+            llm_model=body.get("llm_model"),
+            ollama_host=body.get("ollama_host"),
+            local_only=body.get("local_only"),
+            playback=body.get("playback"),
+        )
+        return JSONResponse({"saved": True, **saved})
 
     return router

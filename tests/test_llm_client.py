@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import importlib
 import socket
+from types import SimpleNamespace
 
 import pytest
 
 from ownvoicereader.config import Config
 from ownvoicereader.llm import client as c
 from ownvoicereader.llm.client import (
+    DEFAULT_HOST,
     DEFAULT_MODEL,
     LlmUnavailable,
     NullLlmClient,
@@ -112,6 +114,107 @@ def test_factory_model_and_host_forwarded():
     assert isinstance(client, OllamaClient)
     assert client.model == "qwen3:8b"
     assert client._host == "http://127.0.0.1:12345"
+
+
+# --------------------------------------------------------------------------- #
+# M4: the probed model list is cached so the REST /api/info path can list
+# models for the viewer's picker *without* a network round-trip per request.
+# These are hermetic: a fake handle stands in for the `ollama` server, so no
+# Ollama process is needed.
+# --------------------------------------------------------------------------- #
+class _FakeHandle:
+    """A stand-in for the `ollama` client handle: a fixed model list on .list()."""
+
+    def __init__(self, models):
+        self._models = [SimpleNamespace(model=m) for m in models]
+
+    def list(self):
+        resp = SimpleNamespace()
+        resp.models = self._models
+        return resp
+
+
+def test_ollama_cached_models_empty_before_probe():
+    client = OllamaClient(model="qwen3:8b")
+    client._client = _FakeHandle(["qwen3:8b", "lfm3-vl:2b"])
+    # Nothing probed yet -> the picker starts empty (populated by the WS hello).
+    assert client.list_cached_models() == []
+
+
+def test_ollama_probe_caches_model_list():
+    client = OllamaClient(model="qwen3:8b")
+    client._client = _FakeHandle(["qwen3:8b", "lfm3-vl:2b"])
+    assert client.available is True  # runs the probe, populating the cache
+    assert client.list_cached_models() == ["qwen3:8b", "lfm3-vl:2b"]
+
+
+def test_ollama_probe_caches_list_even_when_model_absent():
+    # A reachable server with a *different* model still degrades to the A2 base,
+    # but the probed list is cached so the picker knows what is pullable.
+    client = OllamaClient(model="not-here")
+    client._client = _FakeHandle(["qwen3:8b"])
+    assert client.available is True  # does not raise even though "not-here" is absent
+    assert client.list_cached_models() == ["qwen3:8b"]
+
+
+def test_refresh_clears_cached_models_and_availability():
+    client = OllamaClient(model="qwen3:8b")
+    client._client = _FakeHandle(["qwen3:8b"])
+    assert client.available is True
+    assert client.list_cached_models() == ["qwen3:8b"]
+    client.refresh()  # "start Ollama later, reload" -> re-probe the next check
+    assert client.list_cached_models() == []
+    assert client._available is None
+
+
+def test_null_client_cached_models_empty():
+    # The graceful fallback knows no models (vision is off).
+    assert NullLlmClient().list_cached_models() == []
+
+
+# --------------------------------------------------------------------------- #
+# M4: the saved/overridden Ollama host points the client at a different server.
+# --------------------------------------------------------------------------- #
+def test_build_llm_client_uses_config_ollama_host():
+    client = build_llm_client(Config(ollama_host="http://10.0.0.5:11434"))
+    assert client._host == "http://10.0.0.5:11434"
+
+
+def test_build_llm_client_explicit_host_beats_config():
+    client = build_llm_client(Config(ollama_host="http://cfg:11434"), host="http://explicit:11434")
+    assert client._host == "http://explicit:11434"
+
+
+def test_ollama_set_host_updates_and_invalidates():
+    # Re-pointing rebuilds the cached handle + clears the probe/model caches, so the
+    # next `available` / `list_models` reaches the *new* server.
+    client = OllamaClient(model="m", host="http://a:11434")
+    client._client = object()     # a cached handle for the old host
+    client._available = True
+    client._models = ["old"]
+    client.set_host("http://b:11434")
+    assert client._host == "http://b:11434"
+    assert client._client is None      # the handle is rebuilt for the new host
+    assert client._available is None    # reachability is re-probed
+    assert client._models is None       # the model-list cache is cleared
+
+
+def test_ollama_set_host_none_or_empty_reverts_to_env_then_default(monkeypatch):
+    client = OllamaClient(model="m", host="http://a:11434")
+    client.set_host(None)
+    assert client._host is None
+    monkeypatch.setenv("OLLAMA_HOST", "http://from-env:11434")
+    assert client.effective_host == "http://from-env:11434"
+    client.set_host("")              # an empty string reverts too
+    assert client._host is None
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    assert client.effective_host == DEFAULT_HOST
+
+
+def test_null_client_set_host_is_noop():
+    # The graceful fallback is unaffected by a host change.
+    n = NullLlmClient()
+    assert n.set_host("http://x:11434") is n
 
 
 # --------------------------------------------------------------------------- #

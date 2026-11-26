@@ -35,6 +35,9 @@ dependencies = [
     "websockets>=12",
     "python-multipart>=0.0.9",
     "piper-tts>=1.2",
+    # M4: the config file (~/.ownvoicereader/config.yaml) is written/read by the
+    # "Save settings" button and the layering (defaults -> yaml -> env -> CLI).
+    "pyyaml>=6",
 ]
 
 [project.optional-dependencies]

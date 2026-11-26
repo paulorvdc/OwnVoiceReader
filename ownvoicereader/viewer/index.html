@@ -108,6 +108,17 @@
     #zoom-label { min-width: 48px; text-align: center; color: var(--fg-dim); }
     .voice-controls { margin-left: auto; }
     .voice-controls.disabled { opacity: 0.5; }
+    /* M4: the local-only checkbox + the "Save settings" button in the settings group. */
+    .chk { display: inline-flex; align-items: center; gap: 4px; font-size: 13px;
+           color: var(--fg-dim); cursor: pointer; }
+    .chk input { accent-color: var(--accent); }
+    #save-settings { font-size: 13px; padding: 4px 10px; }
+    /* M4: the Ollama host input + the "Refresh models" button in the settings group. */
+    #ollama-host {
+      width: 170px; background: var(--bg-card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 13px;
+    }
+    #refresh-models { font-size: 13px; padding: 4px 10px; }
     select {
       background: var(--bg-card); color: var(--fg);
       border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 13px;
@@ -210,8 +221,18 @@
     </div>
 
     <div class="group voice-controls" id="voice-settings">
+      <select id="model-select" title="Vision / LLM model (local Ollama)" disabled></select>
       <select id="style-select" title="Reader style" disabled></select>
       <select id="voice-select" title="Voice" disabled></select>
+      <input type="text" id="ollama-host"
+             title="Ollama server the vision LLM talks to (the 'Refresh' button re-points + re-probes it)"
+             placeholder="http://localhost:11434" disabled />
+      <button id="refresh-models"
+              title="Point the vision LLM at the host typed here and refresh the model list" disabled>⟳ Refresh</button>
+      <label class="chk" title="Forbid any cloud egress (local-only — the default)">
+        <input type="checkbox" id="local-only-chk" checked> local-only
+      </label>
+      <button id="save-settings" title="Save these settings to the config file" disabled>💾 Save</button>
     </div>
 
     <div class="group" title="Load a different PDF without restarting the server">

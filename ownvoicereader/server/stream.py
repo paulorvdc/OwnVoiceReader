@@ -24,7 +24,12 @@ Browser -> server  (text JSON frames)
     {cmd:"next_cue"}     skip forward exactly one cue (~paragraph)
     {cmd:"prev_cue"}     roll back exactly one cue (~paragraph)
     (a lossless client-side skip/replay remains as a fallback in transport.js)
-    {cmd:"set_style", style} / {cmd:"set_voice", voice}   live switch (M4)
+    {cmd:"set_style", style} / {cmd:"set_voice", voice} / {cmd:"set_model", llm_model}
+         / {cmd:"set_local_only", local_only}   live switch of the reading settings
+         (M4); a `state` reply carries the new value back so the UI can resync.
+     {cmd:"set_ollama_host", host}  point the shared vision client at a different
+         Ollama server (M4: the "Refresh models" button); a `vision` reply carries
+         the fresh {available, model, models, host} so the picker + badge refresh.
     {cmd:"status"}   request the current playback status
 
     A `state` frame now also carries the current `section` ({index,label,kind,
@@ -203,6 +208,36 @@ def build_stream_router(state) -> APIRouter:
                     st = orch.status()
                     st["voice"] = v
                     await websocket.send_json({"type": "state", **st})
+                elif cmd == "set_model":
+                    # M4: switch the vision/LLM model live. `orch.set_model`
+                    # updates the *shared* client + config, so the choice applies to
+                    # the next document load and is persisted by "Save". (Vision for
+                    # the document already open is pre-computed in the background, so
+                    # the new model fully takes effect on the next load.)
+                    m = orch.set_model(msg.get("llm_model") or msg.get("model"))
+                    st = orch.status()
+                    st["llm_model"] = m
+                    await websocket.send_json({"type": "state", **st})
+                elif cmd == "set_local_only":
+                    # M4: toggle the no-cloud-egress setting live; "Save" persists it.
+                    lo = orch.set_local_only(msg.get("local_only", True))
+                    st = orch.status()
+                    st["local_only"] = lo
+                    await websocket.send_json({"type": "state", **st})
+                elif cmd == "set_ollama_host":
+                    # M4: point the shared vision client at a *different* Ollama server
+                    # (the "Refresh models" button). Updates the client + config, then
+                    # re-probes so the model picker + badge refresh *now* — no page
+                    # reload. The reply carries the fresh vision info + the host the
+                    # reader is now pointing at, for the UI.
+                    orch.set_ollama_host(msg.get("host"))
+                    from .api import _vision_info
+                    vision = _vision_info(state, probe=True)
+                    await websocket.send_json({
+                        "type": "vision",
+                        "vision": vision,
+                        "host": vision.get("host"),
+                    })
                 elif cmd == "status":
                     await websocket.send_json({"type": "state", **orch.status()})
                 else:

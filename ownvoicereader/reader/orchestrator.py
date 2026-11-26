@@ -364,6 +364,9 @@ class Orchestrator:
             "voice": self._voice,
             "style": self._style.name,
             "styles": style_names(),
+            "llm_model": self.config.llm_model if self.config else None,
+            "ollama_host": self.config.ollama_host if self.config else None,
+            "local_only": self.config.local_only if self.config else True,
             "current_page": self.cues[self.pos].page if 0 <= self.pos < self.n else None,
             "section": sec.to_dict() if sec else None,
         }
@@ -483,6 +486,45 @@ class Orchestrator:
     def set_voice(self, voice: Optional[str]) -> Optional[str]:
         self._voice = voice
         return voice
+
+    def set_model(self, model: Optional[str]) -> Optional[str]:
+        """Switch the vision/LLM model live. Updates the shared client (so the
+        badge + next document load use it) and records it on the config (so
+        "Save" persists it). Vision for the *current* document is already
+        pre-computed in the background, so the new model fully takes effect on the
+        next document load / re-read."""
+        if model and self.llm is not None and hasattr(self.llm, "model"):
+            try:
+                self.llm.model = model
+            except Exception:  # pragma: no cover - a read-only model property
+                pass
+        if self.config is not None:
+            self.config.llm_model = model
+        return model
+
+    def set_local_only(self, local_only: bool) -> bool:
+        """Toggle the local-only (no cloud egress) setting live. Persists via
+        "Save"; has no effect on a read that is already local-only by default."""
+        if self.config is not None:
+            self.config.local_only = bool(local_only)
+        return bool(local_only)
+
+    def set_ollama_host(self, host: Optional[str]) -> Optional[str]:
+        """Point the shared vision client at a different Ollama server, live
+        (M4: the viewer's host picker / "Refresh models" button). Updates the shared
+        client's host (so the next probe / document load reaches the new server) and
+        records it on the config (so "Save" persists it). ``None`` / empty reverts to
+        the ``OLLAMA_HOST`` env var / default. Vision for the *open* document is
+        pre-computed in the background, so the new host fully applies on the next load
+        / re-read; the caller re-probes so the model picker refreshes now."""
+        if self.llm is not None:
+            try:
+                self.llm.set_host(host or None)
+            except Exception:  # pragma: no cover - a read-only / foreign client
+                pass
+        if self.config is not None:
+            self.config.ollama_host = host or None
+        return host or None
 
     # --- controls -------------------------------------------------------- #
     def pause(self) -> None:

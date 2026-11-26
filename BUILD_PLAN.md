@@ -353,17 +353,71 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > M5 concern); a text-less page with OCR *off* still surfaces its raster as a display figure (the
 > spoken path is unaffected); the "use OCR to confirm caption limits" stretch goal is deferred._
 
-### M4 — Config & models  _status: [ ] not started_
-- [ ] `config.py` — layering: defaults → `~/.ownvoicereader/config.yaml` → env `OWNVOICEREADER_*` → CLI flags
-- [ ] live change of **model / voice / style** from the viewer UI
-- [ ] `--local-only` (no cloud egress) + Ollama-first path
-> 📝 comment:
+### M4 — Config & models  _status: [x] done 2026-11-26_
+- [x] `config.py` — layering: defaults → `~/.ownvoicereader/config.yaml` → env `OWNVOICEREADER_*` → CLI flags
+- [x] live change of **model / voice / style** from the viewer UI
+- [x] `--local-only` (no cloud egress) + Ollama-first path
+- [x] **Save-settings button** (new): the viewer writes the current model/voice/style/local-only to `config.yaml`
+- [x] **Ollama host control** (new): a host input + a "⟳ Refresh models" button in the settings group —
+      re-point the vision LLM at a *different* Ollama server and re-probe the model list live
+      (a `set_ollama_host` WS frame → a `vision` reply); the host is a saved setting too.
+> 📝 comment: _M4 done. The config file is the user's **saved** settings (the
+> model/voice/style they pick in the UI, written by the "💾 Save" button) and
+> sits *below* env + CLI in the layering — a saved choice applies on next launch,
+> but an exported `OWNVOICEREADER_*` var or a flag still wins. The file is
+> optional + best-effort: a missing or malformed `config.yaml` degrades to the
+> lower layer, never a crash. `OWNVOICEREADER_CONFIG` overrides its location.
+>
+> **Live switching** is via WS frames: `set_voice`/`set_style` (already M2.5) and
+> the new `set_model`/`set_local_only` — each updates the orchestrator (and the
+> shared config, so "Save" persists it) and a `state` reply resyncs the UI.
+> **Scope note:** a model switch is *live* for the next document load / re-read —
+> the open document's vision is pre-computed in the background, so the new model
+> fully takes effect on the next load (noted in the picker's tooltip). The badge
+> shows *status*; the picker in the settings group is the *control*.
+>
+> **What the file holds** (durable settings only — `pdf_path`/`checkpoint_path`
+> are per-run and never saved): `host`, `port`, `open_browser`, `local_only`,
+> `playback`, `director`, `llm_provider`, `llm_model`, `ollama_host`, `voice`,
+> `style`. A host *endpoint* (not a credential) is persisted; API keys are never
+> written. Write
+> is atomic (temp + rename). `POST /api/save` (the button) →
+> `save_settings` → `config.save_config`; `/api/info` reports the current
+> `settings` + `vision.models` (cache-only) for the viewer. +25 tests → 172 pass.
+>
+> **Test hardening** (no new feature, deeper coverage of the M4 surface): the
+> `OllamaClient` model-list cache (`list_cached_models` empty-before-probe / cached
+> after / cached even when the configured model is absent / `refresh` clears it),
+> orchestrator robustness (`set_style` on an unknown name degrades to the default,
+> `status` with no shared config), the WS `set_model`/`set_local_only` edge branches
+> (the `"model"` key alias, the default-`True` when omitted) and the `set_voice`/
+> `set_style` `state` resync, plus `_settings_payload` fallbacks (style → default
+> preset, model → `DEFAULT_MODEL`) + an empty-body `POST /api/save` + config edge
+> cases (unset config path, non-numeric `port`, bool coercion from int). +15 → 189.
+>
+> **Ollama host control** (a "⟳ Refresh models" button + a host input in the settings
+> group, requested after M4's first pass): the user can point the vision LLM at a
+> *different* local Ollama server from the UI. The new `set_ollama_host` WS frame
+> re-points the *shared* client (so the next probe / document load reaches the new
+> server) and re-probes, replying with a `vision` frame (fresh model list + the host
+> the reader now points at) so the picker + badge refresh *without a reload*; the host
+> is also a saved setting (`config.ollama_host`, persisted by "Save", overridable by
+> `OWNVOICEREADER_OLLAMA_HOST`). The host input is free-text and **typeable from the
+> start**; a user-typed value is flagged so a later `hello` pre-fill (e.g. after a
+> "Change PDF" reconnect) never clobbers it.
+>
+> **A6 guard (hard rule, user-stated): a token/credential is *never* saved — only the
+> host *endpoint* is durable.** `tests/test_config.py::test_no_credentials_are_ever_persisted`
+> pins it: the credential env-vars (`PROVIDER_ENV_VARS`) are disjoint from the persisted
+> fields (`PERSIST_FIELDS`), and a save with *every* credential exported writes none to
+> disk (while the host still is). +13 tests → **202**, +1 guard → **203 pass.**_
 
 ### M5 — Selection  _status: [ ] not started_
 - [ ] `reader/sections.py` — heading detection (font-size + numbering; optional LLM refine)
 - [ ] `reader/scope.py` — selection → filtered, reading-ordered timeline slice
 - [ ] viewer selection UI: **whole / sections / free-form text range / specific figures-tables / combine**
 - [ ] explanations fire for figures/tables **referenced within the read scope** + explicitly selected
+- [ ] in the whole/auto selection figures and tables should be explained when referenced and then not mentioned again in the normal prose
 > 📝 comment:
 
 ### M6 — Hardening  _status: [ ] not started_

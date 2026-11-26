@@ -17,9 +17,10 @@ open a PDF directly — that path exists for headless / CI use
 
 ## Status
 
-This is at **Milestone M2 + M2.5 + M3** — figures/tables are explained at their
-first reference, an **optional** local vision LLM describes them (M2.5), and
-**scanned papers are read via OCR** (M3). M0–M1 closed; M2.5 and M3 done and
+This is at **Milestone M2 + M2.5 + M3 + M4** — figures/tables are explained at
+their first reference, an **optional** local vision LLM describes them (M2.5),
+**scanned papers are read via OCR** (M3), and **your model/voice/style/local-only/Ollama
+host are saved to a config file and switch live** (M4). M0–M1 closed; M2.5–M4 done and
 listenable. What works today:
 
 - ✅ `ownvoicereader` starts a local server (127.0.0.1, fixed default port
@@ -61,7 +62,18 @@ listenable. What works today:
   cheaply (import-only, ~1 ms) but its **model is loaded only when a sparse page
   actually needs it**. **Without the `[ocr]` extra the reader still runs** and
   simply leaves a scanned page unread (graceful, never a crash).
-- ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`) + a PDF byte endpoint
+- ✅ **Config file + live switching** (M4) — your **model / voice / style / local-only
+  / Ollama host** choices live in a `~/.ownvoicereader/config.yaml` file that the
+  viewer's **💾 Save** button writes, and that is read on launch. The settings
+  **switch live** in the UI (a model picker, a voice + style picker, a local-only
+  toggle, and a **⟳ Refresh models** button that re-points the vision LLM at a
+  *different* Ollama host — each takes effect immediately via a WS frame and can be
+  **saved** to the file with one click). Resolution layers, highest precedence last:
+  **defaults → `config.yaml` → `OWNVOICEREADER_*` env → CLI flags** — so a saved
+  choice applies on next launch, but an env var or a flag still wins. The file is
+  optional: a missing or malformed one degrades to the lower layer, never a crash.
+- ✅ JSON API (`/api/info`, `/api/load`, `/api/unload`, **`/api/save`**) + a PDF
+  byte endpoint
   (`/pdf`, with HTTP range support for large files) + a `/ws` transport for
   events + audio.
 - ✅ Server hygiene (A13): binds `127.0.0.1` only, a **fixed default port
@@ -71,7 +83,6 @@ listenable. What works today:
 
 What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
 
-- 🔜 **M4** config layering + live switching of the LLM model.
 - 🔜 **M5** selection: sections / text range / specific figures-tables.
 - 🔜 **M6** hardening: graceful LLM-down, resume checkpoint, more tests.
 - 🔜 **M7** UI revamp: a high-contrast, **low-vision-first** reader UI (a light
@@ -181,14 +192,18 @@ ollama pull lfm3-vl:2b           # 2. the default vision model (small, ~1.5 GB)
 ```
 
 The model is chosen via `--llm` / `OWNVOICEREADER_LLM_MODEL` and the server via
-`OLLAMA_HOST`; both are read from the OS environment and **never persisted** (A6).
+`OLLAMA_HOST`; in the viewer you can also set a different Ollama host with the
+**⟳ Refresh models** button and save it (M4). A host *endpoint* is a durable
+setting the viewer persists to `config.yaml`; **API credentials are never
+persisted** — they are read from the OS environment only (A6).
 
 **The viewer shows a status badge** (next to the Piper voice badge) so you always
 know the vision state: a **green** chip naming the model in use
 (`vision: lfm3-vl:2b`) when Ollama is reachable, or a **red** `vision: … · off`
 chip when it is not — the red one is your cue that you still need to start Ollama
 and/or pull the model. The badge is **read-only** (it reflects the *configured*
-model, `client.model`; there is no in-UI picker yet — that is M4), and it
+model + host, `client.model` / `client.effective_host`; the *control* is the model
+**picker** and the **⟳ Refresh models** button in the settings group — M4), and it
 distinguishes "extra not installed" (`pip install ".[vision]"`) from
 "installed but the server is down".
 
@@ -213,6 +228,53 @@ ownvoicereader path/to/scanned.pdf --auto     # headless read of a scan
 #   export OWNVOICEREADER_OCR_ENGINE=tesseract
 #   export OWNVOICEREADER_OCR_DPI=300
 ```
+
+---
+
+### Config file — your settings, saved (M4)
+
+Your **model / voice / style / local-only / Ollama host** choices are saved to
+`~/.ownvoicereader/config.yaml` and read on launch. In the viewer's settings group
+you can **switch them live** (a model picker, a voice + style picker, a local-only
+toggle, and a **⟳ Refresh models** button that re-points the vision LLM at a
+*different* Ollama host and re-probes its model list — each takes effect at once) and
+then click **💾 Save** to write them to the file. On the next launch the saved
+settings apply. The host field is free-text: type any `http://host:port` (e.g. a
+remote machine on your LAN) and click **⟳ Refresh** to point the reader at it.
+
+Resolution layers, **highest precedence last**:
+
+```
+defaults  →  ~/.ownvoicereader/config.yaml  →  OWNVOICEREADER_* env  →  CLI flags
+```
+
+So a saved choice wins over the built-in defaults, but an exported env var or a CLI
+flag still wins over the file. The file is **optional and best-effort**: a missing
+or malformed `config.yaml` is ignored (the reader degrades to the lower layer, it
+never crashes). Point it elsewhere with `OWNVOICEREADER_CONFIG=path/to/config.yaml`.
+
+The file holds only *durable settings* — `host`, `port`, `open_browser`,
+`local_only`, `playback`, `director`, `llm_provider`, `llm_model`, `ollama_host`,
+`voice`, `style`. Per-run arguments (`pdf_path`, `checkpoint_path`) are never
+written, and **no secrets are ever persisted** (A6) — provider keys stay in the OS
+environment. A host *endpoint* (`ollama_host`) is not a secret, so it is saved.
+A sample:
+
+```yaml
+# OwnVoiceReader settings — written by the viewer's 'Save' button.
+llm_model: lfm3-vl:2b
+ollama_host: http://10.0.0.5:11434
+voice: en_US-lessac
+style: academic-calm
+local_only: true
+```
+
+> **Scope note:** switching the *vision model* or the *Ollama host* is live for the
+> **next** document load / re-read — the open document's figure/table descriptions are
+> computed in the background, so the new model/host fully takes effect when you load a
+> new paper. The **⟳ Refresh models** button re-probes the (possibly new) host *now*,
+> repopulating the model picker + badge without a page reload. Voice + style switch
+> instantly mid-read.
 
 ---
 
@@ -305,17 +367,21 @@ Block(kind: Text|Figure|Table, source: text|ocr, text, image,
 - **No cloud egress by default.** `--local-only` is the default; provider
   access is opt-in.
 - **Secrets stay in your environment (A6).** API keys (`OPENAI_API_KEY`,
-  `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_HOST`, …) are read from the
-  OS environment **only**. The UI shows *which* keys are present **by name**
-  (e.g. a small `OPENAI_API_KEY` badge) but **never the value**, and nothing is
-  written to disk. This keeps credential handling entirely in your hands.
+  `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the OS environment
+  **only** — never written to disk. A host *endpoint* (`ollama_host`, via
+  `OWNVOICEREADER_OLLAMA_HOST` / the saved config) is **not** a secret, so it *is*
+  a durable setting the viewer saves. The UI shows *which* keys are present
+  **by name** (e.g. a small `OPENAI_API_KEY` badge) but **never the value**, and no
+  credential is ever written to disk. This keeps credential handling entirely in
+  your hands.
 
 ---
 
-## Configuration (M1)
+## Configuration
 
-Config layers are **defaults → environment → CLI flags** (the YAML layer
-`~/.ownvoicereader/config.yaml` arrives in M4).
+Config layers are **defaults → `~/.ownvoicereader/config.yaml` → environment →
+CLI flags** (the YAML layer is the *saved* settings written by the viewer's
+💾 Save button; M4). See *Config file* above.
 
 Environment variables (prefix `OWNVOICEREADER_`):
 
@@ -326,7 +392,8 @@ Environment variables (prefix `OWNVOICEREADER_`):
 | `OWNVOICEREADER_PLAYBACK` | `browser` | `browser` (HTML5) / `system` (aplay) / `null` |
 | `OWNVOICEREADER_LOCAL_ONLY` | `true` | forbid cloud egress |
 | `OWNVOICEREADER_LLM_MODEL` | `lfm3-vl:2b` | vision/LLM model on local Ollama (M2.5); `--llm` overrides |
-| `OLLAMA_HOST` | `http://localhost:11434` | the Ollama server (a different one can be pointed at) |
+| `OWNVOICEREADER_OLLAMA_HOST` | `http://localhost:11434` | the Ollama server the vision LLM uses (M4); the **saved** host, overridable by env, settable live via the ⟳ Refresh button |
+| `OLLAMA_HOST` | `http://localhost:11434` | the Ollama server — the `ollama` library's own var, used as the fallback when no host is saved |
 | `OWNVOICEREADER_VOICE` | `en_US-lessac-medium` | Piper voice id |
 | `OWNVOICEREADER_STYLE` | `academic-calm` | TTS style preset |
 | `OWNVOICEREADER_VOICE_DIR` | `~/.cache/ownvoicereader/voices` | Piper voice dir |
@@ -334,6 +401,7 @@ Environment variables (prefix `OWNVOICEREADER_`):
 | `OWNVOICEREADER_ESPEAK_BIN` | auto | override espeak-ng binary path |
 | `OWNVOICEREADER_OCR_ENGINE` | `rapidocr` | OCR engine: `rapidocr` (default) / `tesseract` (M3) |
 | `OWNVOICEREADER_OCR_DPI` | `300` | rasterization resolution for OCR'd pages |
+| `OWNVOICEREADER_CONFIG` | `~/.ownvoicereader/config.yaml` | the saved-settings file (M4); read on launch |
 
 ---
 
@@ -352,7 +420,30 @@ skips cleanly when no engine is present). M3 adds `tests/test_ocr.py` — the
 geometry mapping, graceful degradation, and a **conditional parity test** that
 reads the scanned CEUR sample with the real engine and checks it recovers the
 typed twin's content (skipping itself when the `[ocr]` extra or sample is
-absent).
+absent). M4 adds `tests/test_config.py` (the layering: defaults →
+`config.yaml` → env → CLI, type coercion, graceful missing/malformed files, the
+path override, and a save→load round-trip) and `tests/test_m4.py` (the
+orchestrator's live `set_model` / `set_voice` / `set_style` / `set_local_only`
+setters, the `POST /api/save` writer, and the `/api/info` `settings` payload).
+It also hardens the M4 surface: `tests/test_llm_client.py` pins the
+`OllamaClient` model-list cache (empty before a probe, cached after, cached even
+when the configured model is absent, and cleared by `refresh`); `tests/test_m4.py`
+adds the orchestrator's robustness cases (an unknown style degrades to the default,
+`status` with no shared config) and the WS edge branches (the `"model"` key alias,
+the default-`True` `local_only`, and the `set_voice`/`set_style` `state` resync);
+and `tests/test_server_api.py` covers the `_settings_payload` fallbacks
+(style → default preset, model → `DEFAULT_MODEL`) and an empty-body `POST /api/save`.
+The Ollama **host control** adds the `set_ollama_host` path end-to-end: `tests/test_llm_client.py`
+(`build_llm_client` honors `config.ollama_host`, `OllamaClient.set_host` re-points and
+invalidates the handle + caches, the null client is a no-op), `tests/test_m4.py`
+(orchestrator `set_ollama_host` updates the shared client + config, and a WS
+`set_ollama_host` → `vision` reply with the re-probed model list + host), and
+`tests/test_config.py` / `tests/test_server_api.py` (the host persists via the layering
+and via `POST /api/save`, and `/api/info` reports it). The **A6 guard**
+(`tests/test_config.py::test_no_credentials_are_ever_persisted`) pins the hard rule
+that a provider *token* is never written to disk (credential env-vars are disjoint from
+the persisted fields, and a save with every credential exported leaks none — while the
+host endpoint still is).
 
 ---
 

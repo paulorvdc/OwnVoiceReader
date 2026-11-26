@@ -103,6 +103,12 @@ class LlmClient(ABC):
         """Force the next :attr:`available` check to re-probe the server."""
         return self
 
+    def set_host(self, host: Optional[str]) -> "LlmClient":
+        """Point the client at a different Ollama server (M4: the viewer's host
+        picker + "Refresh models"). A no-op on the abstract/null client; overridden
+        by :class:`OllamaClient`."""
+        return self
+
     def chat(
         self,
         model: Optional[str] = None,
@@ -146,6 +152,11 @@ class LlmClient(ABC):
     def has_model(self, model: Optional[str] = None) -> bool:
         """True if ``model`` (or the client's default) is present on the server."""
         return False
+
+    def list_cached_models(self) -> list[str]:
+        """The model ids known from the last probe (no network). The null client
+        knows none. Overridden by :class:`OllamaClient`."""
+        return []
 
     async def achat(
         self,
@@ -200,6 +211,10 @@ class OllamaClient(LlmClient):
         # Cache the reachability/model probe so repeated `available` checks are
         # cheap; `refresh()` invalidates it.
         self._available: Optional[bool] = None
+        # M4: the model ids last probed from the server (None until the first
+        # probe). Cached so the REST `/api/info` path can list models for the
+        # viewer's picker without a network round-trip per request.
+        self._models: Optional[list] = None
 
     # -- server handle ----------------------------------------------------- #
     @property
@@ -233,7 +248,30 @@ class OllamaClient(LlmClient):
     def refresh(self) -> "OllamaClient":
         """Force the next :attr:`available` to re-probe (server may have come up)."""
         self._available = None
+        self._models = None
         return self
+
+    def set_host(self, host: Optional[str]) -> "OllamaClient":
+        """Point at a different Ollama server (M4: the viewer's host picker /
+        "Refresh models" button). Updates the host and invalidates the cached handle
+        + probe, so the next ``available`` / ``list_models`` reaches the *new* server.
+        ``None`` (or an empty string) reverts to the ``OLLAMA_HOST`` env var / the
+        library default."""
+        self._host = host or None
+        self._client = None      # the handle is built per host; rebuild for the new one
+        self._available = None   # force a fresh reachability probe
+        self._models = None      # ...and a fresh model-list cache
+        return self
+
+    @property
+    def effective_host(self) -> str:
+        """The host the client will actually reach: the saved/overridden ``_host``,
+        else the ``OLLAMA_HOST`` env var, else the default. Exposed so the UI can show
+        where the reader is pointing (without us persisting anything)."""
+        host = self._host
+        if host is None and os.environ.get("OLLAMA_HOST"):
+            host = os.environ["OLLAMA_HOST"]
+        return host or DEFAULT_HOST
 
     def _probe(self) -> None:
         """Raise :class:`LlmUnavailable` unless the server answers *and* the model
@@ -245,6 +283,9 @@ class OllamaClient(LlmClient):
             raise LlmUnavailable(
                 f"Ollama server unreachable at {self._host or DEFAULT_HOST}: {exc}"
             ) from exc
+        # M4: cache the probed model ids so the REST path can list them (for the
+        # viewer's model picker) without a network round-trip.
+        self._models = models
         if not models:
             raise LlmUnavailable(f"no models on Ollama at {self._host or DEFAULT_HOST}")
         if not self.has_model(self.model):
@@ -255,6 +296,12 @@ class OllamaClient(LlmClient):
             return
         log.info("LLM: using Ollama model %s at %s",
                  self.model, self._host or DEFAULT_HOST)
+
+    def list_cached_models(self) -> list[str]:
+        """The model ids from the last probe (no network). Empty until the first
+        probe runs (the WS ``hello`` probes, so the list is populated by the time
+        the picker is shown)."""
+        return list(self._models) if self._models is not None else []
 
     def list_models(self) -> list[str]:
         out: list[str] = []
@@ -369,6 +416,9 @@ def build_llm_client(
     *not* probed here (a network round-trip); the caller checks it lazily.
     """
     chosen = resolve_model(config, model)
+    # M4: the saved/overridden host (config.ollama_host) points the client at a
+    # different Ollama server; None lets the client fall back to OLLAMA_HOST / default.
+    host = host or (config.ollama_host if config is not None else None)
     try:
         return OllamaClient(model=chosen, host=host)
     except ImportError:
