@@ -5,7 +5,7 @@
 OwnVoiceReader is a lightweight **local web app** that renders an academic PDF,
 lets you read the **whole paper** (jumping between its **sections**) aloud in a
 chosen **voice + style**, and uses
-**your LLM** (local Ollama or a cloud provider you opt into) to explain
+**your LLM** (the local Ollama server you run) to explain
 figures and tables **at the right moment**. Text and scanned (OCR) PDFs are
 handled interchangeably.
 
@@ -363,16 +363,17 @@ Block(kind: Text|Figure|Table, source: text|ocr, text, image,
 - **Local-only by default (A13).** The server binds `127.0.0.1` (never your LAN)
   on a **fixed default port (6767)** — easy to open and reason about — falling
   back to a free port if that one is already busy.
-- **No cloud egress by default.** `--local-only` is the default; provider
-  access is opt-in.
-- **Secrets stay in your environment (A6).** API keys (`OPENAI_API_KEY`,
-  `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the OS environment
-  **only** — never written to disk. A host *endpoint* (`ollama_host`, via
-  `OWNVOICEREADER_OLLAMA_HOST` / the saved config) is **not** a secret, so it *is*
-  a durable setting the viewer saves. The UI shows *which* keys are present
-  **by name** (e.g. a small `OPENAI_API_KEY` badge) but **never the value**, and no
-  credential is ever written to disk. This keeps credential handling entirely in
-  your hands.
+- **No cloud egress, ever (A6).** The app pings **no proprietary cloud provider** —
+  the only LLM is the local **Ollama** server you run, and TTS is on-machine
+  (**Piper** / espeak-ng). `--local-only` is the default (and the only mode): there
+  is no cloud option to opt into, so there are **no API keys or tokens to handle**.
+  The whole configuration surface — the env allow-list + the settings the "Save"
+  button writes — must stay clear of every proprietary provider, guarded by
+  `tests/test_config.py::test_no_credentials_are_ever_persisted`.
+- **The only thing saved is local settings.** A host *endpoint* (`ollama_host`, the
+  local Ollama server, via `OWNVOICEREADER_OLLAMA_HOST` / the saved config) is **not**
+  a secret, so it *is* a durable setting the viewer saves. No credential is ever
+  written to disk.
 
 ---
 
@@ -439,10 +440,11 @@ invalidates the handle + caches, the null client is a no-op), `tests/test_m4.py`
 `set_ollama_host` → `vision` reply with the re-probed model list + host), and
 `tests/test_config.py` / `tests/test_server_api.py` (the host persists via the layering
 and via `POST /api/save`, and `/api/info` reports it). The **A6 guard**
-(`tests/test_config.py::test_no_credentials_are_ever_persisted`) pins the hard rule
-that a provider *token* is never written to disk (credential env-vars are disjoint from
-the persisted fields, and a save with every credential exported leaks none — while the
-host endpoint still is).
+(`tests/test_config.py::test_no_credentials_are_ever_persisted`) pins the local-only
+hard rule: no proprietary cloud provider is referenced anywhere in the configuration
+surface (the env allow-list + the persisted settings), no field is credential-shaped,
+and a save with every provider env var exported leaks none — while the host *endpoint*
+still is.
 
 ---
 

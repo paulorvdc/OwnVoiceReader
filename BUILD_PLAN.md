@@ -3,8 +3,8 @@
 > **Tagline:** *your model, your voice, your machine.*
 > A lightweight **local web app** that renders an academic PDF, lets you read the
 > **whole paper** (jumping between its **sections**),
-> and reads it aloud in a chosen **voice + style** — using **your LLM** (cloud or
-> local Ollama) to explain figures and tables at the **right moment**. Handles
+> and reads it aloud in a chosen **voice + style** — using **your LLM** (local
+> Ollama) to explain figures and tables at the **right moment**. Handles
 > text **and** scanned (OCR) PDFs interchangeably.
 
 This document is the **build-mode** plan. It uses **checkboxes** for task status
@@ -376,8 +376,8 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > **What the file holds** (durable settings only — `pdf_path` is per-run and never
 > saved): `host`, `port`, `open_browser`, `local_only`,
 > `playback`, `director`, `llm_provider`, `llm_model`, `ollama_host`, `voice`,
-> `style`. A host *endpoint* (not a credential) is persisted; API keys are never
-> written. Write
+> `style`. A host *endpoint* (not a credential) is persisted; the app pings **no
+> proprietary cloud provider** (A6), so nothing secret is ever written. Write
 > is atomic (temp + rename). `POST /api/save` (the button) →
 > `save_settings` → `config.save_config`; `/api/info` reports the current
 > `settings` + `vision.models` (cache-only) for the viewer. +25 tests → 172 pass.
@@ -403,11 +403,14 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
 > start**; a user-typed value is flagged so a later `hello` pre-fill (e.g. after a
 > "Change PDF" reconnect) never clobbers it.
 >
-> **A6 guard (hard rule, user-stated): a token/credential is *never* saved — only the
-> host *endpoint* is durable.** `tests/test_config.py::test_no_credentials_are_ever_persisted`
-> pins it: the credential env-vars (`PROVIDER_ENV_VARS`) are disjoint from the persisted
-> fields (`PERSIST_FIELDS`), and a save with *every* credential exported writes none to
-> disk (while the host still is). +13 tests → **202**, +1 guard → **203 pass.**_
+> **A6 guard (hard rule, user-stated): the app pings *no proprietary cloud
+> provider* — only local settings, including the host *endpoint*, are durable.**
+> `tests/test_config.py::test_no_credentials_are_ever_persisted` pins it: the whole
+> configuration surface (the env allow-list `PROVIDER_ENV_VARS` + the persisted
+> `PERSIST_FIELDS`) references **no** provider from `CLOUD_PROVIDERS` and no
+> credential-shaped field, and a save with *every* provider env var exported writes
+> none to disk (while the host endpoint still is). +13 tests → **202**, +1 guard →
+> **203 pass.**_
 
 ### M5 — UI revamp  _status: [~] C1–C6 done · C7 (unify icon pack) next · in progress_
 - [x] make sure the cue being read is the one in now reading at all times as it changes to the next cue to soon in previous versions
@@ -461,7 +464,7 @@ ownvoicereader/
 │  ├─ explainer.py       [ ]   # vision figures / grid-summary tables
 │  └─ director.py        [ ]   # opt-in LLM timing (--director)
 ├─ voice/
-│  ├─ tts_engine.py      [ ]   # Piper / kokoro / espeak-ng / OpenAI / ElevenLabs
+│  ├─ tts_engine.py      [ ]   # Piper / espeak-ng — local, cloud-free TTS
 │  ├─ styles.py          [ ]   # 4 presets + override
 │  └─ player.py          [ ]   # browser audio (default) / system audio
 ├─ server/

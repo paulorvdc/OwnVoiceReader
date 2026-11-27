@@ -173,19 +173,39 @@ def test_ollama_host_env_layer(tmp_path, monkeypatch):
 
 
 def test_no_credentials_are_ever_persisted(tmp_path, monkeypatch):
-    """A6 — the hard rule: a provider *token/credential* is NEVER written to disk;
-    only a host *endpoint* (and other non-secret settings) is durable. This guards the
-    invariant that the read-only credential env-vars and the persisted fields are
-    disjoint, and that a save with *every* credential exported leaks none to the file."""
-    from ownvoicereader.config import PERSIST_FIELDS, PROVIDER_ENV_VARS
+    """A6 (local-only) — the app pings **no proprietary cloud provider**.
 
-    # The guard is meaningful: there ARE credential env-vars to keep out.
-    api_keys = [k for k in PROVIDER_ENV_VARS if "KEY" in k or "TOKEN" in k]
-    assert api_keys, "expected at least one credential env var to guard"
-    # No credential var is a persisted field (so it can't enter the saved file).
-    assert set(PROVIDER_ENV_VARS).isdisjoint(PERSIST_FIELDS)
+    Since the cloud API tokens were removed, the old "no credential is ever
+    persisted" rule is re-expressed for a local-only app: the *whole configuration
+    surface* (the read-only env allow-list + the settings the "Save" button writes)
+    must reference **no proprietary cloud provider** and hold **no credential-shaped
+    field** — the only provider is the local Ollama server (an open endpoint the user
+    runs) plus on-machine TTS. A save with every provider env var exported therefore
+    leaks nothing secret. If a cloud provider is ever wired back into the config,
+    this fails."""
+    from ownvoicereader.config import CLOUD_PROVIDERS, PERSIST_FIELDS, PROVIDER_ENV_VARS
 
-    # Even with every credential exported in the environment…
+    # (a) The blacklist is non-trivial: there ARE providers we refuse to ping.
+    assert CLOUD_PROVIDERS, "expected a non-empty proprietary-cloud blacklist"
+
+    # (b) No proprietary cloud provider, and no credential-shaped name, anywhere in
+    #     the config surface — the env allow-list or the persisted settings.
+    surface = list(PROVIDER_ENV_VARS) + list(PERSIST_FIELDS)
+    for name in surface:
+        assert not any(cloud in name.lower() for cloud in CLOUD_PROVIDERS), \
+            "proprietary cloud provider in the config surface: %r" % name
+        assert not any(tok in name for tok in ("_KEY", "TOKEN", "SECRET", "_API")), \
+            "credential-shaped field in the config surface: %r" % name
+
+    # (c) Out of the box the provider is the local Ollama server and cloud egress is
+    #     forbidden — nothing proprietary is pinged by default.
+    default = Config()
+    assert default.local_only is True
+    assert (default.llm_provider or "ollama").lower() not in CLOUD_PROVIDERS
+
+    # (d) Even with every provider env var exported, a save writes no provider env
+    #     var name and leaks no value — the file holds only local settings,
+    #     including the Ollama host *endpoint* (which is not a credential).
     for k in PROVIDER_ENV_VARS:
         monkeypatch.setenv(k, "SUPER-SECRET-VALUE")
     c = Config(
@@ -196,12 +216,11 @@ def test_no_credentials_are_ever_persisted(tmp_path, monkeypatch):
         style="lecture",
     )
     written = save_config(c, tmp_path / "config.yaml").read_text()
-
-    # …a credential value never leaks, and no credential var name is written:
+    # No provider env var name or value leaks into the file:
     assert "SUPER-SECRET-VALUE" not in written
-    for k in api_keys:
+    for k in PROVIDER_ENV_VARS:
         assert k not in written
-    # but every durable, non-secret setting IS written — including the host endpoint:
+    # but every durable, non-secret local setting IS written — including the endpoint:
     for f in PERSIST_FIELDS:
         assert f in written
     assert Config.load(tmp_path / "config.yaml").ollama_host == "http://localhost:11434"

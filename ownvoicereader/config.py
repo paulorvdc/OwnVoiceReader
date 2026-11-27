@@ -11,12 +11,15 @@ environment, so an exported ``OWNVOICEREADER_*`` var still wins, and below the
 CLI, so a flag is the final word. The file is **optional and best-effort**: a
 missing or malformed file is ignored, so the reader never crashes on it.
 
-API **credentials** (``OPENAI_API_KEY``, ``ELEVENLABS_API_KEY``, …) are read
-**from the OS environment only** and are never written to disk (A6) — this keeps
-secrets out of our hands. The config file holds only *settings*, never secrets. A
+The app is **local-only** (A6, A13): it pings **no proprietary cloud provider** —
+the only LLM is the local **Ollama** server the user runs, and TTS is on-machine
+(**Piper** / espeak-ng). There are therefore **no API credentials** to handle: the
+old cloud keys (``OPENAI_API_KEY``, ``ELEVENLABS_API_KEY``, …) were removed, and
+``CLOUD_PROVIDERS`` is the blacklist the configuration surface must stay clear of
+(guarded by ``tests/test_config.py::test_no_credentials_are_ever_persisted``). A
 host *endpoint* such as ``ollama_host`` (the local Ollama server, e.g.
-``http://localhost:11434``) is not a credential, so it is a saved setting the user
-can change in the viewer; the ollama library's own ``OLLAMA_HOST`` env var is still
+``http://localhost:11434``) is **not** a credential, so it *is* a saved setting the
+user changes in the viewer; the ollama library's own ``OLLAMA_HOST`` env var is still
 read live for the fallback when no host is saved.
 """
 
@@ -35,12 +38,24 @@ log = logging.getLogger("ownvoicereader.config")
 CONFIG_PATH_ENV = "OWNVOICEREADER_CONFIG"
 DEFAULT_CONFIG_PATH = Path("~/.ownvoicereader/config.yaml")
 
-# A small allow-list of environment variables we *read* for provider access.
-# These are passed through to the LLM/TTS clients untouched; we never persist
+# A small allow-list of environment variables we *read* for provider access — and
+# these are **local endpoints only** (the Ollama server the user runs). No
+# proprietary cloud provider is ever read or pinged (A6); see CLOUD_PROVIDERS below.
+# The vars are passed through to the LLM client untouched and we never persist
 # them. Documented in the README so the user knows exactly what is read.
 PROVIDER_ENV_VARS: tuple[str, ...] = (
     "OLLAMA_HOST",
     "OLLAMA_MODELS",
+)
+
+# A6 (local-only): the proprietary cloud providers the app must **never** ping.
+# The whole configuration surface — the read-only env allow-list above plus the
+# settings the "Save" button persists (PERSIST_FIELDS) — must stay clear of every
+# one of these. ``test_no_credentials_are_ever_persisted`` enforces it: if a cloud
+# provider is ever wired back into the config, that test fails.
+CLOUD_PROVIDERS: tuple[str, ...] = (
+    "openai", "elevenlabs", "anthropic", "claude",
+    "gemini", "bedrock", "vertexai",
 )
 
 
