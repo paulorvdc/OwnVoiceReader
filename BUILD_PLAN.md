@@ -457,8 +457,9 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
     later; this file slots in as the quick-start page)._
 - [ ] **PyInstaller / Briefcase** cross-platform binary (`.exe` / AppImage / `.dmg`)
 - [ ] final UI should open on its own window but keep mostly web usage (similar to discord)
-- [ ] `--auto --no-browser` headless polish (A12)
-> 📝 comment:
+> 📝 comment: A12 (`--auto --no-browser` headless polish) was **scrapped** as a
+> planning item — the existing `--auto` / `_run_headless` code + its tests stay;
+> the headless path remains functional, it's just no longer an M6 task.
 
 ---
 

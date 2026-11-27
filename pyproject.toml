@@ -31,7 +31,6 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "pydantic>=2.10",
     "pydantic-settings>=2.5",
-    "jinja2>=3.1",
     "websockets>=12",
     "python-multipart>=0.0.9",
     "piper-tts>=1.2",
@@ -41,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-server = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "jinja2>=3.1", "websockets>=12", "python-multipart>=0.0.9"]
+server = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "websockets>=12", "python-multipart>=0.0.9"]
 # Local OCR fallback (A4) when a page's text layer is sparse (M3). `rapidocr`
 # (the maintained successor to rapidocr-onnxruntime; the -onnxruntime line caps
 # at Python <3.13) is the default; pytesseract drives the system tesseract binary
@@ -77,6 +76,7 @@ ownvoicereader = [
     "viewer/*.html",
     "viewer/*.js",
     "viewer/vendor/pdfjs/*.js",
+    "viewer/vendor/phosphor/*",
 ]
 
 [tool.pytest.ini_options]

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import logging
 import socket
+import sys
 import threading
 import time
+import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -33,9 +35,21 @@ from .stream import build_stream_router
 
 log = logging.getLogger("ownvoicereader.server")
 
-# The viewer assets (index.html, transport.js, vendored PDF.js) live next to
-# the package:  <repo>/ownvoicereader/viewer/  ->  .../ownvoicereader/server/app.py .parent.parent/viewer
-VIEWER_DIR = Path(__file__).resolve().parent.parent / "viewer"
+def _viewer_dir() -> Path:
+    """Locate the static viewer assets (index.html, transport.js, vendored PDF.js).
+
+    In a normal (pip/conda) install the viewer lives next to the package
+    (``<pkg>/viewer``). Under a frozen build (PyInstaller) the assets are
+    extracted beside the executable (one-dir) or into a temp ``_MEIPASS`` dir
+    (one-file) — resolve against that so the frozen app finds them too; the dev
+    path is the fallback when nothing frozen is present.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable)))
+        cand = base / "viewer"
+        if cand.is_dir():
+            return cand
+    return Path(__file__).resolve().parent.parent / "viewer"
 
 
 @dataclass
@@ -82,7 +96,7 @@ def create_app(state: ServerState) -> FastAPI:
     app.include_router(build_stream_router(state))
 
     # Static viewer assets (transport.js + vendored PDF.js).
-    viewer = VIEWER_DIR
+    viewer = _viewer_dir()
     if viewer.is_dir():
         app.mount("/viewer", StaticFiles(directory=str(viewer)), name="viewer")
     else:  # pragma: no cover - only when the package data is missing
