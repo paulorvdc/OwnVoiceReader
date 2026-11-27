@@ -429,14 +429,32 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
   - _✅ **C7 done.** One minimalist icon pack — **Phosphor (regular weight)**, vendored **offline** (`viewer/vendor/phosphor/Phosphor.woff2` + a trimmed `phosphor.css` with only the ~18 glyphs used; follows the existing pdfjs-vendoring pattern, no CDN/network). Every control now uses the same family: the **header** (☰ settings, the 📄↔📖 cycler, and the theme toggle — sun / moon / palette), the **footer** (page-nav, zoom, and the reading transport, all **uniform square `.icon-btn`s**), and the **settings** (⟳ refresh + 💾 save glyphs). The **PDF opens fit-to-width by default** (was a fixed 110%); the "Fit" button + `f` key re-fit. Buttons that sit next to each other are now **uniform**, and the **local-only toggle moved *into* the vision group** with a full-contrast label so it matches that block's style. The dynamic icons (theme, the PDF/reading cycler, play/pause) swap via a small `innerHTML` helper, and two status strings that used a literal ▶ glyph were de-staled to words. Viewer-only — no new tests; full suite still **206**._
 > 📝 comment:
 
-### M6 — Packaging (later, post-v1)  _status: [ ] not started_
+### M6 — Packaging (later, post-v1)  _status: [~] hardening done (2/2) · binary next_
 > **Hardening first, then the binary.** The old *Hardening* milestone was folded
 > here: its pending items lead the packaging work. The two already-decided items are
 > not carried as tasks — graceful LLM-down / TTS-down degradation already shipped with
 > M2.5 / M1, and the **resume checkpoint (A14) was scrapped** as not needed: it would
 > add complications for a local reader.
-- [ ] **hardening:** error handling + unit tests across ingest / references / timeline
-- [ ] **hardening:** a guided install doc for the core + each optional extra
+- [x] **hardening:** error handling + unit tests across ingest / references / timeline
+  - _✅ **M6 hardening done.** Added the missing input-validation / None-guards so the
+    pure helpers **degrade on a bad or missing input instead of crashing** —
+    `find_mentions` / `build_index` / `build_explain_schedule` / `order_lines` now
+    tolerate `None` / non-string / empty input — and pinned the "degrade, never
+    abort" contract in a new hermetic `tests/test_hardening.py` (**+28 → 234 pass**):
+    a malformed page is swallowed by the per-page ingest paths; the pure helpers
+    yield nothing on empty / `None`; an unavailable OCR engine falls through to the
+    `NullOcrEngine`; `render_region` degrades to `None` on a bad page/region; and
+    `pdf_source`'s input-validation boundary raises a **clean** `FileNotFoundError` /
+    `ValueError` (not a PyMuPDF traceback) for a missing / not-a-file / not-a-PDF path
+    — the errors the CLI actually shows the user._
+- [x] **hardening:** a guided install doc for the core + each optional extra
+  - _✅ **M6 hardening done.** Added `docs/quickstart.md` — a guided install for the
+    **core** and **each optional extra** (`vision`, `ocr`, `server`, `test`, `all`):
+    prerequisites + the `pip`-index gotcha, the `pip install -e .` core (Piper ships
+    in core, only the voice model downloads on first use), the UI-upload + headless
+    flows, each extra's install + system deps + env vars, the config layering, and a
+    troubleshooting table. Written **ReadTheDocs-ready** (the user plans an RTD page
+    later; this file slots in as the quick-start page)._
 - [ ] **PyInstaller / Briefcase** cross-platform binary (`.exe` / AppImage / `.dmg`)
 - [ ] final UI should open on its own window but keep mostly web usage (similar to discord)
 - [ ] `--auto --no-browser` headless polish (A12)
