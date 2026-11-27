@@ -38,14 +38,12 @@
     zoomLabel: $("zoom-label"),
     // M1 UI
     voiceControls: $("voice-controls"),
-    voiceSettings: $("voice-settings"),
     btnPlay: $("btn-play"),
     btnStop: $("btn-stop"),
     btnPrevCue: $("btn-prev-cue"),
     btnNextCue: $("btn-next-cue"),
     btnNext: $("btn-next"),
     btnReplay: $("btn-replay"),
-    changePdf: $("change-pdf"),
     progress: $("progress"),
     styleSelect: $("style-select"),
     voiceSelect: $("voice-select"),
@@ -56,6 +54,14 @@
     // M4: the Ollama host input + the "Refresh models" button (re-point + re-probe).
     ollamaHost: $("ollama-host"),
     refreshModels: $("refresh-models"),
+    // M5 C5: the settings side bar + its header toggles (☰ settings overlay + the
+    // single 📄/📖 panel cycler that swaps PDF ↔ 'now reading' on narrow windows) +
+    // the in-card drag-drop + open button (which reuse the landing's hidden input).
+    settings: $("settings"),
+    burger: $("burger"),
+    panelToggle: $("panel-toggle"),
+    setDrop: $("set-drop"),
+    setOpenBtn: $("set-open-btn"),
     nowSection: $("now-section"),
     lyricsList: $("lyrics-list"),
     lyricsNow: $("lyrics-now"),
@@ -233,26 +239,30 @@
 
   function wireDropZone() {
     el.openBtn.addEventListener("click", () => el.fileInput.click());
+    // M5 C5: the in-card "Open a PDF…" button reuses the same hidden file input.
+    if (el.setOpenBtn) el.setOpenBtn.addEventListener("click", () => el.fileInput.click());
     el.fileInput.addEventListener("change", (e) => {
       const f = e.target.files && e.target.files[0];
       if (f) uploadFile(f);
       e.target.value = ""; // allow re-selecting the same file
     });
 
+    // Both the landing drop zone and the in-card drop zone accept a dropped PDF.
+    const dropTargets = [el.drop, el.setDrop].filter(Boolean);
     ["dragenter", "dragover"].forEach((ev) =>
-      el.drop.addEventListener(ev, (e) => {
+      dropTargets.forEach((t) => t.addEventListener(ev, (e) => {
         e.preventDefault();
-        el.drop.classList.add("dragover");
-      }));
+        t.classList.add("dragover");
+      })));
     ["dragleave", "drop"].forEach((ev) =>
-      el.drop.addEventListener(ev, (e) => {
+      dropTargets.forEach((t) => t.addEventListener(ev, (e) => {
         e.preventDefault();
-        el.drop.classList.remove("dragover");
-      }));
-    el.drop.addEventListener("drop", (e) => {
+        t.classList.remove("dragover");
+      })));
+    dropTargets.forEach((t) => t.addEventListener("drop", (e) => {
       const f = e.dataTransfer.files && e.dataTransfer.files[0];
       if (f) uploadFile(f);
-    });
+    }));
   }
 
   // =====================================================================
@@ -1001,13 +1011,36 @@
     el.localOnlyChk.addEventListener("change", () => {
       if (reader) reader.send({ cmd: "set_local_only", local_only: el.localOnlyChk.checked });
     });
-    // "Change PDF" loads a different document on the fly (no server restart):
-    // it reuses the landing's hidden file input + the uploadFile → onDocument
-    // flow, which tears down the old reader/WS and loads the new document.
-    el.changePdf.addEventListener("click", () => el.fileInput.click());
-    // M5 C3/C4: the old transcript toggle is gone — the follow-along is an always-on
-    // lyrics panel (a side panel when the window is wide, a single bottom line when
-    // it is narrow); it has no expand/collapse control.
+    // M5 C5: the in-card "Open a PDF…" button (set-open-btn, wired in wireDropZone)
+    // loads a different document on the fly; the old "Change PDF" footer button is
+    // gone. The ☰ / 📄 header toggles drive the responsive collapse.
+    // ☰ opens/closes the settings side bar as a slide-over overlay (only meaningful
+    // when the card has auto-collapsed on a narrow window).
+    if (el.burger) {
+      el.burger.addEventListener("click", () => el.reader.classList.toggle("settings-open"));
+    }
+    // M5 C5: on a narrow window the PDF and the "now reading" panel are mutually
+    // exclusive — a single centered cycler button (like the theme toggle) swaps
+    // between them: its icon shows the panel that's up, and a click switches to the
+    // other (so the page fills the space instead of being squeezed by the panel).
+    function showPanel(reading) {
+      el.reader.classList.toggle("pdf-shown", !reading);
+      if (el.panelToggle) {
+        el.panelToggle.textContent = reading ? "📖" : "📄";
+        el.panelToggle.title = reading
+          ? "Switch to the PDF page (the 'now reading' panel is up)"
+          : "Switch to the 'now reading' panel (the PDF is up)";
+      }
+    }
+    if (el.panelToggle) {
+      // a click swaps to the other panel (true = reading up, false = PDF up)
+      el.panelToggle.addEventListener("click", () =>
+        showPanel(el.reader.classList.contains("pdf-shown")));
+    }
+    // default at a narrow window: the "now reading" panel is up, the PDF hidden.
+    showPanel(true);
+    // M5 C3/C5: the follow-along is an always-on lyrics side panel; on a narrow
+    // window it and the PDF share the space only when one of them is hidden.
     // M5 C2: sync the button to whatever scheme the inline head script already
     // applied to <html>, then cycle light → dark → Dracula on click (persisted).
     if (el.themeBtn) {

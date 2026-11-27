@@ -59,22 +59,22 @@
       margin: 0; height: 100%;
       background: var(--bg); color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 14px;
+      font-size: 16px;
     }
     body { display: flex; flex-direction: column; height: 100vh; }
 
     header {
       display: flex; align-items: baseline; gap: 12px;
       padding: 10px 16px; border-bottom: 1px solid var(--border);
-      background: var(--bg-elev);
+      background: var(--bg-elev); position: relative;
     }
-    header h1 { font-size: 17px; margin: 0; letter-spacing: 0.5px; }
+    header h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; }
     .subtitle { color: var(--fg-dim); font-style: italic; }
-    .doc-info { margin-left: auto; color: var(--fg-dim); font-size: 12px; text-align: right; }
+    .doc-info { margin-left: auto; color: var(--fg-dim); font-size: 13px; text-align: right; }
     .doc-info .title { color: var(--fg); }
     .badge {
       display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px;
-      font-size: 11px; background: var(--accent-dim); color: var(--accent);
+      font-size: 12px; background: var(--accent-dim); color: var(--accent);
       border: 1px solid var(--accent);
     }
     /* Status badges keep the theme-adaptive accent chip but take a coloured border
@@ -102,7 +102,7 @@
     button {
       background: var(--bg-card); color: var(--fg);
       border: 1px solid var(--border); border-radius: 8px;
-      padding: 8px 14px; font-size: 14px; cursor: pointer;
+      padding: 8px 14px; font-size: 16px; cursor: pointer;
     }
     button:hover:not(:disabled) { border-color: var(--accent); }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -124,7 +124,7 @@
 
     /* Control bar */
     footer#controls {
-      display: flex; align-items: center; gap: 18px;
+      display: flex; align-items: center; justify-content: center; gap: 18px;
       padding: 10px 16px; border-top: 1px solid var(--border);
       background: var(--bg-elev); flex-wrap: wrap;
     }
@@ -136,29 +136,71 @@
     }
     .group > span { color: var(--fg-dim); }
     #zoom-label { min-width: 48px; text-align: center; color: var(--fg-dim); }
-    .voice-controls { margin-left: auto; }
     .voice-controls.disabled { opacity: 0.5; }
     /* M4: the local-only checkbox + the "Save settings" button in the settings group. */
-    .chk { display: inline-flex; align-items: center; gap: 4px; font-size: 13px;
+    .chk { display: inline-flex; align-items: center; gap: 4px; font-size: 15px;
            color: var(--fg-dim); cursor: pointer; }
     .chk input { accent-color: var(--accent); }
-    #save-settings { font-size: 13px; padding: 4px 10px; }
+    #save-settings { font-size: 15px; padding: 4px 10px; }
     /* M4: the Ollama host input + the "Refresh models" button in the settings group. */
     #ollama-host {
       width: 170px; background: var(--bg-card); color: var(--fg);
-      border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 13px;
+      border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 15px;
     }
-    #refresh-models { font-size: 13px; padding: 4px 10px; }
+    #refresh-models { font-size: 15px; padding: 4px 10px; }
     select {
       background: var(--bg-card); color: var(--fg);
-      border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 13px;
+      border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 15px;
     }
     .progress { font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; color: var(--fg-dim); }
     .m1-note { color: var(--warn); font-size: 11px; }
 
-    /* Reader layout: the PDF on the left, the "now reading" follow-along panel on
-       the right when the window is wide enough (M5 C4). */
-    #reader { display: flex; flex-direction: row; min-height: 0; overflow: hidden; }
+    /* Reader layout (M5 C5): a 3-column row — the settings side bar on the LEFT
+       (a 420px card), the PDF in the middle, and the "now reading" follow-along
+       panel on the RIGHT (a 500px card of the same aesthetic). As the window
+       narrows the settings card collapses first (burger overlay), then the PDF
+       (the now-reading stays). */
+    #reader { display: flex; flex-direction: row; min-height: 0; overflow: hidden; position: relative; }
+
+    /* M5 C5: the settings side bar — a 420px card, same aesthetic as the now-reading
+       panel, on the left of the PDF. It mirrors the now-reading's thick INNER
+       margin (thicker on the right here, toward the PDF), so the two cards float
+       toward the centre. It collapses to a burger-toggled overlay first. */
+    #settings {
+      flex: 0 0 420px; margin: 16px 16px 16px 40px;
+      display: flex; flex-direction: column; min-height: 0;
+      border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+      background: var(--bg-elev); box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+    }
+    .sidebar-head {
+      display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+      padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elev);
+    }
+    .sidebar-head .label { color: var(--accent); font-weight: 600; font-size: 14px; white-space: nowrap; }
+    /* the settings contents scroll if they exceed the card height */
+    .set-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px; }
+    .set-group { margin-bottom: 16px; }
+    .set-group:last-child { margin-bottom: 0; }
+    .set-group label { display: block; font-size: 14px; color: var(--fg-dim); margin-bottom: 4px; }
+    .set-group select, .set-group input[type="text"] {
+      width: 100%; background: var(--bg-card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 15px;
+    }
+    .set-group .chk { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--fg-dim); }
+    .host-row { display: flex; gap: 6px; align-items: center; }
+    .host-row input { flex: 1 1 auto; min-width: 0; }
+    .host-row button { flex: 0 0 auto; white-space: nowrap; }
+    /* the compact drop zone inside the settings card (the landing's .drop, smaller);
+       width:100% so it fills the card rather than the landing's fixed 560px */
+    .drop-sm { width: 100%; padding: 14px 12px; text-align: center; border-radius: 10px; }
+    .drop-sm .drop-sub { margin: 0 0 8px; font-size: 15px; }
+    .drop-sm button { width: 100%; }
+
+    /* Header toggles: ☰ (settings overlay, far LEFT via order:-1) + the single
+       📄/📖 panel cycler (CENTRALISED, like the theme button). Both hidden on wide
+       screens; each appears only when its panel auto-collapses on a narrow window. */
+    #burger { display: none; order: -1; }
+    #panel-toggle { display: none; }
 
     /* M5 C3/C4: the "now reading" panel is a lyrics-style follow-along transcript
        (Apple-Music style) — the cue being heard is enlarged + high-contrast in the
@@ -168,7 +210,7 @@
        with a margin all round — thicker on the right, so it sits more centrally
        rather than hugging the edge. */
     #lyrics {
-      flex: 0 0 420px; margin: 16px 40px 16px 16px;
+      flex: 0 0 500px; margin: 16px 40px 16px 16px;
       display: flex; flex-direction: column; min-height: 0;
       border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
       background: var(--bg-elev); box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
@@ -202,32 +244,47 @@
     .lyrics-list .line.notice { color: var(--warn); font-style: italic; }
     .lyrics-list .line.explain { font-style: italic; }
     .lyrics-list .line.explain-marker { color: var(--accent); font-weight: 600; }
-    /* The single-line current cue, shown only in the collapsed (narrow) layout. */
+    /* #lyrics-now (the single-line current cue) is kept in the DOM as a fallback
+       but is no longer shown — the now-reading panel now stays as a side card
+       (M5 C5) instead of collapsing to a bottom line. */
     .lyrics-now { display: none; }
-    /* C4: as the window narrows, the card's margins collapse FIRST — the thick
-       right gap goes first, then the rest — so the side panel keeps as much width
-       as possible, and only when there is genuinely no room for it does it drop to
-       a single line across the bottom (with no way to enlarge it). */
-    @media (max-width: 1120px) {
-      /* the thick right margin collapses first */
+
+    /* M5 C5 responsive collapse — the side cards give way in this order as the
+       window narrows: (1) the thick inner margins shrink first, (2) the SETTINGS
+       card collapses to a burger-toggled overlay (it yields before the now-reading),
+       (3) the PDF collapses last and the now-reading takes the full width. */
+    @media (max-width: 1280px) {
+      /* the thick inner margins (the side facing the PDF) shrink first */
+      #settings { margin-left: 16px; }
       #lyrics { margin-right: 16px; }
     }
-    @media (max-width: 1000px) {
-      /* the remaining margins go too — the card is now flush to the edges */
-      #lyrics { margin: 0; }
+    @media (max-width: 1080px) {
+      /* the settings card collapses to a burger-toggled overlay; the ☰ in the
+         header re-opens it as a slide-over from the left. Anchored to #reader
+         (position: relative above), not the viewport, so it stays *below* the
+         header and the ☰ stays clickable to close it. */
+      #settings {
+        position: absolute; top: 0; left: 0; width: 420px; max-width: 90vw;
+        height: 100%; z-index: 60; margin: 0; border-radius: 0;
+        transform: translateX(-100%); transition: transform .2s ease;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+      }
+      #reader.settings-open #settings { transform: translateX(0); }
+      #burger { display: inline-block; }
     }
     @media (max-width: 900px) {
-      #reader { flex-direction: column; }
-      #lyrics {
-        flex: 0 0 auto; width: 100%; margin: 0;
-        border: none; border-top: 1px solid var(--border);
-        border-radius: 0; box-shadow: none;
-      }
-      .lyrics-head { display: none; }
-      .lyrics-list { display: none; }
-      .lyrics-now {
-        display: block; padding: 10px 14px; font-size: 18px; color: var(--fg);
-        font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      /* the PDF collapses last; the now-reading stays and takes the full width.
+         The two are mutually exclusive: showing the PDF collapses the 'now reading'
+         panel (so the page fills the space instead of being squeezed by it), and the
+         single 📄/📖 cycler in the header swaps between them. */
+      #pdf-wrap { display: none; }
+      #lyrics { flex: 1 1 auto; margin: 0; }
+      #reader.pdf-shown #pdf-wrap { display: grid; }
+      #reader.pdf-shown #lyrics { display: none; }
+      /* the cycler is centralised in the header, just like the theme button */
+      #panel-toggle {
+        display: inline-block; position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%); z-index: 5;
       }
     }
 
@@ -259,6 +316,8 @@
     <h1>OwnVoiceReader</h1>
     <span class="subtitle">your model, your voice, your machine</span>
     <div class="doc-info" id="doc-info"></div>
+    <button id="burger" class="theme-btn" title="Settings panel" aria-label="Toggle settings panel">☰</button>
+    <button id="panel-toggle" class="theme-btn" title="Switch between the PDF page and the 'now reading' panel" aria-label="Toggle PDF / reading panel">📖</button>
     <button id="theme-btn" class="theme-btn" title="Theme (light / dark / Dracula)" aria-label="Cycle theme">🌞</button>
   </header>
 
@@ -273,11 +332,52 @@
     </div>
   </section>
 
-  <!-- Reader: the PDF on the left; the "now reading" follow-along panel
-       (a lyrics-style transcript — Apple-Music style) sits to the right when the
-       window is wide enough, and collapses to a single bottom line when it isn't
-       (M5 C3/C4). -->
+  <!-- Reader: a 3-column row — settings side bar (left), PDF (middle), "now
+       reading" follow-along panel (right, a lyrics-style transcript). As the window
+       narrows the settings card collapses first (burger overlay), then the PDF; the
+       now-reading stays (M5 C5). -->
   <section id="reader" class="screen hidden">
+    <!-- Settings side bar (M5 C5): a 420px card, same aesthetic as the now-reading
+         panel, on the left of the PDF. It collapses to a burger-toggled overlay
+         (header ☰) *before* the now-reading does; the PDF collapses last (header
+         📄 brings it back). -->
+    <aside id="settings" aria-label="Settings">
+      <div class="sidebar-head"><span class="label">SETTINGS</span></div>
+      <div class="set-body">
+        <!-- (1) drag-and-drop + open, like the landing screen -->
+        <div id="set-drop" class="drop drop-sm">
+          <p class="drop-sub">Drop a PDF here, or</p>
+          <button id="set-open-btn">Open a PDF…</button>
+        </div>
+        <!-- (2) voice + style -->
+        <div class="set-group">
+          <label for="voice-select">Voice</label>
+          <select id="voice-select" title="Voice" disabled></select>
+          <label for="style-select">Reader style</label>
+          <select id="style-select" title="Reader style" disabled></select>
+        </div>
+        <!-- (3) vision: host + refresh on one row, then the Ollama model list -->
+        <div class="set-group" id="vision-group">
+          <label for="ollama-host">Ollama host</label>
+          <div class="host-row">
+            <input type="text" id="ollama-host"
+                   title="Ollama server the vision LLM talks to (the 'Refresh' button re-points + re-probes it)"
+                   placeholder="http://localhost:11434" disabled />
+            <button id="refresh-models"
+                    title="Point the vision LLM at the host typed here and refresh the model list" disabled>⟳ Refresh</button>
+          </div>
+          <label for="model-select">Ollama models</label>
+          <select id="model-select" title="Vision / LLM model (local Ollama)" disabled></select>
+        </div>
+        <!-- local-only + save -->
+        <div class="set-group">
+          <label class="chk" title="Forbid any cloud egress (local-only — the default)">
+            <input type="checkbox" id="local-only-chk" checked> local-only
+          </label>
+          <button id="save-settings" title="Save these settings to the config file" disabled>💾 Save</button>
+        </div>
+      </div>
+    </aside>
     <div id="pdf-wrap">
       <canvas id="pdf-canvas"></canvas>
     </div>
@@ -318,24 +418,6 @@
       <span class="progress" id="progress" title="reading position">–</span>
     </div>
 
-    <div class="group voice-controls" id="voice-settings">
-      <select id="model-select" title="Vision / LLM model (local Ollama)" disabled></select>
-      <select id="style-select" title="Reader style" disabled></select>
-      <select id="voice-select" title="Voice" disabled></select>
-      <input type="text" id="ollama-host"
-             title="Ollama server the vision LLM talks to (the 'Refresh' button re-points + re-probes it)"
-             placeholder="http://localhost:11434" disabled />
-      <button id="refresh-models"
-              title="Point the vision LLM at the host typed here and refresh the model list" disabled>⟳ Refresh</button>
-      <label class="chk" title="Forbid any cloud egress (local-only — the default)">
-        <input type="checkbox" id="local-only-chk" checked> local-only
-      </label>
-      <button id="save-settings" title="Save these settings to the config file" disabled>💾 Save</button>
-    </div>
-
-    <div class="group" title="Load a different PDF without restarting the server">
-      <button id="change-pdf" title="Change PDF — load a different file on the fly">Change PDF…</button>
-    </div>
   </footer>
 
   <!-- The "now reading" follow-along now lives inside the reader (the #lyrics
