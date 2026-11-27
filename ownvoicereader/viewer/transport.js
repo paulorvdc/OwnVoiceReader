@@ -171,7 +171,9 @@
       el.pageInput.value = "1";
 
       showReader();
-      await renderPage();
+      // M5 C7: open fitted to the screen width by default (instead of a fixed
+      // 110%) — the user picked "fit to screen" as the default zoom on open.
+      await fitToContainer();
       setStatus("ready — " + pdfDoc.numPages + " pages", "ok");
     } catch (e) {
       setStatus("could not render PDF: " + e.message, "err");
@@ -315,7 +317,7 @@
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
         this._reconnectGaveUp = false;
-        setStatus("connected — press ▶ to read the paper aloud", "ok");
+        setStatus("connected — press Play (Space) to read the paper aloud", "ok");
       };
       // A closed socket is common (a brief blip, or the user reloading the
       // page after a server restart). Retry in place a few times with
@@ -327,7 +329,7 @@
         this.reconnectAttempts = (this.reconnectAttempts || 0) + 1;
         if (this.reconnectAttempts >= 5) {
           this._reconnectGaveUp = true;
-          setStatus("connection lost — press ▶ or reload to retry", "err");
+          setStatus("connection lost — press Play or reload to retry", "err");
           return;
         }
         const delay = 500 * this.reconnectAttempts;
@@ -529,7 +531,7 @@
       this.state = "done";
       this.waitingForCue = false;
       this.enableControls(true); // allow replay/restart
-      el.btnPlay.textContent = "▶";
+      el.btnPlay.innerHTML = '<i class="ph ph-play"></i>';
       this.setProgress(this.cueCount, this.cueCount);
       setStatus("finished reading", "ok");
       el.lyricsNow.textContent = "— end of reading —";
@@ -569,7 +571,7 @@
           this.onEnd();
         } else {
           this.playing = true;
-          el.btnPlay.textContent = "⏸";
+          el.btnPlay.innerHTML = '<i class="ph ph-pause"></i>';
           this.send({ cmd: "resume" });
           this.pump();
           this.maybeFetchMore();
@@ -582,14 +584,14 @@
         this.current = null;
         this.queue.length = 0;
         this.waitingForCue = false;
-        el.btnPlay.textContent = "▶";
+        el.btnPlay.innerHTML = '<i class="ph ph-play"></i>';
         el.lyricsNow.textContent = "stopped — ready to play from the start";
         this.setProgress(0, this.cueCount);
       } else if (s.state === "paused") {
         this.playing = false;
-        el.btnPlay.textContent = "▶";
+        el.btnPlay.innerHTML = '<i class="ph ph-play"></i>';
       } else if (s.state === "playing") {
-        el.btnPlay.textContent = "⏸";
+        el.btnPlay.innerHTML = '<i class="ph ph-pause"></i>';
       }
     }
 
@@ -597,7 +599,7 @@
     async play() {
       if (this.state === "done") { this.restart(); return; }
       this.playing = true;
-      el.btnPlay.textContent = "⏸";
+      el.btnPlay.innerHTML = '<i class="ph ph-pause"></i>';
       // `resume` is state-only on the server; we pull each cue with `continue`
       // (via maybeFetchMore), so a resume never produces a cue we already hold.
       this.send({ cmd: "resume" });
@@ -615,7 +617,7 @@
       // discarding it here would skip that cue when we resume. We resume it from
       // the queue instead.
       this.send({ cmd: "pause" });
-      el.btnPlay.textContent = "▶";
+      el.btnPlay.innerHTML = '<i class="ph ph-play"></i>';
       setStatus("paused", "");
     }
 
@@ -631,7 +633,7 @@
       this._pendingAudioEvent = null;
       this._pendingLine = null;
       this.pos = 0;
-      el.btnPlay.textContent = "▶";
+      el.btnPlay.innerHTML = '<i class="ph ph-play"></i>';
       this.send({ cmd: "stop" });
       this.setProgress(0, this.cueCount);
       setStatus("stopped — at the start", "");
@@ -666,7 +668,7 @@
       this._pendingAudioEvent = null;
       this._pendingLine = null;
       this._jumping = true;
-      el.btnPlay.textContent = "⏸";
+      el.btnPlay.innerHTML = '<i class="ph ph-pause"></i>';
       setStatus(statusText, "");
       this.send({ cmd });
     }
@@ -1004,10 +1006,12 @@
   // survives a reload. A tiny inline script in <head> applies the saved value
   // before first paint (so a saved Dracula doesn't flash as light); here we sync
   // the button icon/label to whatever is already on <html> and wire the cycle.
+  // M5 C7: each theme shows its Phosphor glyph on the header toggle — sun (light),
+  // moon (dark), palette (Dracula, the "custom / painted" look).
   const THEMES = [
-    { name: "light",   icon: "🌞", label: "Light (high-contrast)" },
-    { name: "dark",    icon: "🌙", label: "Dark (high-contrast)" },
-    { name: "dracula", icon: "🧛", label: "Dracula" },
+    { name: "light",   icon: "ph-sun",     label: "Light (high-contrast)" },
+    { name: "dark",    icon: "ph-moon",    label: "Dark (high-contrast)" },
+    { name: "dracula", icon: "ph-palette", label: "Dracula" },
   ];
   const THEME_KEY = "ownvoicereader.theme";
 
@@ -1015,7 +1019,7 @@
     const t = THEMES.find((x) => x.name === name) || THEMES[0];
     document.documentElement.setAttribute("data-theme", t.name);
     if (el.themeBtn) {
-      el.themeBtn.textContent = t.icon;
+      el.themeBtn.innerHTML = '<i class="ph ' + t.icon + '"></i>';
       el.themeBtn.title = "Theme: " + t.label + " — click to cycle";
       el.themeBtn.setAttribute("aria-label", "Cycle theme; current: " + t.label);
     }
@@ -1099,7 +1103,8 @@
     function showPanel(reading) {
       el.reader.classList.toggle("pdf-shown", !reading);
       if (el.panelToggle) {
-        el.panelToggle.textContent = reading ? "📖" : "📄";
+        el.panelToggle.innerHTML =
+          '<i class="ph ' + (reading ? "ph-book-open" : "ph-file-text") + '"></i>';
         el.panelToggle.title = reading
           ? "Switch to the PDF page (the 'now reading' panel is up)"
           : "Switch to the 'now reading' panel (the PDF is up)";

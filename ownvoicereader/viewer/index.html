@@ -6,6 +6,9 @@
   <title>OwnVoiceReader</title>
   <!-- Vendored PDF.js (offline). Loaded before transport.js. -->
   <script src="/viewer/vendor/pdfjs/pdf.min.js"></script>
+  <!-- M5 C7: one minimalist icon pack (Phosphor, regular weight) vendored for
+       offline use — no CDN, no network. See vendor/phosphor/phosphor.css. -->
+  <link rel="stylesheet" href="/viewer/vendor/phosphor/phosphor.css" />
   <style>
     /* M5 C2: three colour schemes, all keyed off <html data-theme>. Light
        high-contrast is the default (the low-vision primary target); the header
@@ -107,12 +110,23 @@
     button:hover:not(:disabled) { border-color: var(--accent); }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
     #open-btn { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
-    /* M5 C2: the header theme toggle (sun / moon / vampire emoji). */
+    /* M5 C7: one minimalist Phosphor pack (regular weight) across every control.
+       The glyph is a font, so it follows the current theme colour automatically.
+       Icon-only buttons get a uniform square so a cluster reads as one consistent
+       row; a glyph beside a word (Refresh / Save) just sits to the left of it. */
+    .ph { font-size: 18px; line-height: 1; vertical-align: -0.15em; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    .group > button.icon-btn { width: 44px; height: 44px; padding: 0; }
+    .group > button.icon-btn .ph { font-size: 20px; }
+    /* M5 C2/C7: the header toggles — square icon buttons (the ☰ settings + the
+       single 📄/📖 cycler + the theme cycle). */
     .theme-btn {
-      font-size: 16px; line-height: 1; padding: 4px 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; line-height: 1; padding: 0;
       background: var(--bg-card); color: var(--fg);
       border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
     }
+    .theme-btn .ph { font-size: 20px; }
 
     /* Reader */
     #pdf-wrap { display: grid; place-items: start center; padding: 16px; flex: 1 1 auto; min-width: 0; overflow: auto; }
@@ -141,13 +155,22 @@
     .chk { display: inline-flex; align-items: center; gap: 4px; font-size: 15px;
            color: var(--fg-dim); cursor: pointer; }
     .chk input { accent-color: var(--accent); }
-    #save-settings { font-size: 15px; padding: 4px 10px; }
+    /* M5 C7: the local-only toggle lives *inside* the vision group (it governs
+       whether any cloud egress — incl. vision — is allowed) and matches that
+       group's control style, with a full-contrast label for the low-vision target. */
+    .set-group .chk.local { color: var(--fg); font-weight: 600; margin-top: 12px; }
+    .set-group .chk.local input { width: 18px; height: 18px; accent-color: var(--accent); }
+    /* M5 C7: "Save settings" pairs a Phosphor glyph with a word, so it sizes to
+       its text and matches the rest of the settings controls. */
+    #save-settings { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; padding: 4px 10px; }
+    #save-settings .ph { font-size: 16px; }
     /* M4: the Ollama host input + the "Refresh models" button in the settings group. */
     #ollama-host {
       width: 170px; background: var(--bg-card); color: var(--fg);
       border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 15px;
     }
-    #refresh-models { font-size: 15px; padding: 4px 10px; }
+    #refresh-models { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; padding: 4px 10px; }
+    #refresh-models .ph { font-size: 16px; }
     select {
       background: var(--bg-card); color: var(--fg);
       border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 15px;
@@ -340,9 +363,9 @@
     <h1>OwnVoiceReader</h1>
     <span class="subtitle">your model, your voice, your machine</span>
     <div class="doc-info" id="doc-info"></div>
-    <button id="burger" class="theme-btn" title="Settings panel" aria-label="Toggle settings panel">☰</button>
-    <button id="panel-toggle" class="theme-btn" title="Switch between the PDF page and the 'now reading' panel" aria-label="Toggle PDF / reading panel">📖</button>
-    <button id="theme-btn" class="theme-btn" title="Theme (light / dark / Dracula)" aria-label="Cycle theme">🌞</button>
+    <button id="burger" class="theme-btn" title="Settings panel" aria-label="Toggle settings panel"><i class="ph ph-list"></i></button>
+    <button id="panel-toggle" class="theme-btn" title="Switch between the PDF page and the 'now reading' panel" aria-label="Toggle PDF / reading panel"><i class="ph ph-book-open"></i></button>
+    <button id="theme-btn" class="theme-btn" title="Theme (light / dark / Dracula)" aria-label="Cycle theme"><i class="ph ph-sun"></i></button>
   </header>
 
   <!-- Landing (no document loaded) -->
@@ -380,7 +403,9 @@
           <label for="style-select">Reader style</label>
           <select id="style-select" title="Reader style" disabled></select>
         </div>
-        <!-- (3) vision: host + refresh on one row, then the Ollama model list -->
+        <!-- (3) vision: host + refresh on one row, then the Ollama model list,
+             then the local-only toggle (kept *here*, with the vision block, since
+             it governs whether any cloud egress — incl. vision — is allowed) -->
         <div class="set-group" id="vision-group">
           <label for="ollama-host">Ollama host</label>
           <div class="host-row">
@@ -388,17 +413,17 @@
                    title="Ollama server the vision LLM talks to (the 'Refresh' button re-points + re-probes it)"
                    placeholder="http://localhost:11434" disabled />
             <button id="refresh-models"
-                    title="Point the vision LLM at the host typed here and refresh the model list" disabled>⟳ Refresh</button>
+                    title="Point the vision LLM at the host typed here and refresh the model list" disabled><i class="ph ph-arrow-clockwise"></i> Refresh</button>
           </div>
           <label for="model-select">Ollama models</label>
           <select id="model-select" title="Vision / LLM model (local Ollama)" disabled></select>
-        </div>
-        <!-- local-only + save -->
-        <div class="set-group">
-          <label class="chk" title="Forbid any cloud egress (local-only — the default)">
+          <label class="chk local" title="Forbid any cloud egress (local-only — the default)">
             <input type="checkbox" id="local-only-chk" checked> local-only
           </label>
-          <button id="save-settings" title="Save these settings to the config file" disabled>💾 Save</button>
+        </div>
+        <!-- (4) save settings -->
+        <div class="set-group">
+          <button id="save-settings" title="Save these settings to the config file" disabled><i class="ph ph-floppy-disk"></i> Save</button>
         </div>
       </div>
     </aside>
@@ -422,27 +447,27 @@
   <!-- Control bar (shown once a document is loaded) -->
   <footer id="controls" class="hidden">
     <div class="group" title="page navigation">
-      <button id="prev-page" title="Previous page (←)">◀</button>
-      <input id="page-input" type="number" min="1" value="1" title="Go to page" />
+      <button id="prev-page" class="icon-btn" title="Previous page (←)" aria-label="Previous page"><i class="ph ph-caret-left"></i></button>
+      <input id="page-input" type="number" min="1" value="1" title="Go to page" aria-label="Go to page number" />
       <span>/</span>
       <span id="page-count">–</span>
-      <button id="next-page" title="Next page (→)">▶</button>
+      <button id="next-page" class="icon-btn" title="Next page (→)" aria-label="Next page"><i class="ph ph-caret-right"></i></button>
     </div>
     <div class="group" title="zoom">
-      <button id="zoom-out" title="Zoom out (−)">−</button>
-      <button id="zoom-fit" title="Fit width">Fit</button>
-      <button id="zoom-in" title="Zoom in (+)">+</button>
-      <span id="zoom-label">110%</span>
+      <button id="zoom-out" class="icon-btn" title="Zoom out (−)" aria-label="Zoom out"><i class="ph ph-magnifying-glass-minus"></i></button>
+      <button id="zoom-fit" class="icon-btn" title="Fit to screen (width)" aria-label="Fit to screen"><i class="ph ph-arrows-in"></i></button>
+      <button id="zoom-in" class="icon-btn" title="Zoom in (+)" aria-label="Zoom in"><i class="ph ph-magnifying-glass-plus"></i></button>
+      <span id="zoom-label">…</span>
     </div>
 
     <div class="group voice-controls disabled" id="voice-controls"
          title="Reading controls — start/stop the paper being read aloud">
-      <button id="btn-replay" title="Back one section (double-click: skip a whole section)">⏮</button>
-      <button id="btn-prev-cue" title="Back one paragraph">⏪</button>
-      <button id="btn-play" title="Play / Pause (space)">▶</button>
-      <button id="btn-stop" title="Stop / reset">⏹</button>
-      <button id="btn-next-cue" title="Forward one paragraph">⏩</button>
-      <button id="btn-next" title="Forward to next section">⏭</button>
+      <button id="btn-replay" class="icon-btn" title="Back one section (double-click: skip a whole section)" aria-label="Back one section"><i class="ph ph-skip-back"></i></button>
+      <button id="btn-prev-cue" class="icon-btn" title="Back one paragraph" aria-label="Back one paragraph"><i class="ph ph-caret-double-left"></i></button>
+      <button id="btn-play" class="icon-btn" title="Play / Pause (space)" aria-label="Play or pause"><i class="ph ph-play"></i></button>
+      <button id="btn-stop" class="icon-btn" title="Stop / reset" aria-label="Stop and reset"><i class="ph ph-stop"></i></button>
+      <button id="btn-next-cue" class="icon-btn" title="Forward one paragraph" aria-label="Forward one paragraph"><i class="ph ph-caret-double-right"></i></button>
+      <button id="btn-next" class="icon-btn" title="Forward to next section" aria-label="Forward to next section"><i class="ph ph-skip-forward"></i></button>
       <span class="progress" id="progress" title="reading position">–</span>
     </div>
 

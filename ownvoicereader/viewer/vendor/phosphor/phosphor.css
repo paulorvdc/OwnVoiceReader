@@ -1,0 +1,65 @@
+/* Phosphor Icons — regular weight, vendored for OFFLINE use (M5 C7).
+ *
+ * Source: https://github.com/phosphor-icons/core  (MIT license — see the
+ * upstream LICENSE). Only the glyphs the viewer actually draws are listed here;
+ * the full regular font (Phosphor.woff2, ~147 KB) ships beside this file so the
+ * icons render with no CDN and no network. The class shape mirrors upstream:
+ * put BOTH classes on an element, e.g.  <i class="ph ph-play"></i>.
+ *
+ * The @font-face keeps only the woff2 (the only binary we vendor) so there are
+ * no dangling references to the .woff/.ttf/.svg we deliberately did not ship.
+ */
+@font-face {
+  font-family: "Phosphor";
+  src: url("./Phosphor.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+.ph {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: "Phosphor" !important;
+  speak: never;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+
+  /* Enable Ligatures ================ */
+  letter-spacing: 0;
+  -webkit-font-feature-settings: "liga";
+  -moz-font-feature-settings: "liga=1";
+  -moz-font-feature-settings: "liga";
+  -ms-font-feature-settings: "liga" 1;
+  font-feature-settings: "liga";
+  -webkit-font-variant-ligatures: discretionary-ligatures;
+  font-variant-ligatures: discretionary-ligatures;
+
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- the icons the viewer uses (M5 C7: one minimalist pack everywhere) ---- */
+.ph.ph-list:before { content: "\e2f0"; }                 /* ☰ settings burger */
+.ph.ph-book-open:before { content: "\e0e6"; }           /* 'now reading' panel up */
+.ph.ph-file-text:before { content: "\e23a"; }          /* the PDF page up */
+.ph.ph-sun:before { content: "\e472"; }                /* light theme */
+.ph.ph-moon:before { content: "\e330"; }              /* dark theme */
+.ph.ph-palette:before { content: "\e6c8"; }           /* dracula / custom theme */
+.ph.ph-arrow-clockwise:before { content: "\e036"; }    /* ⟳ refresh models */
+.ph.ph-floppy-disk:before { content: "\e248"; }        /* 💾 save settings */
+.ph.ph-play:before { content: "\e3d0"; }               /* ▶ play */
+.ph.ph-pause:before { content: "\e39e"; }             /* ⏸ pause */
+.ph.ph-stop:before { content: "\e46c"; }              /* ⏹ stop */
+.ph.ph-skip-back:before { content: "\e5a4"; }         /* ⏮ back a section */
+.ph.ph-skip-forward:before { content: "\e5a6"; }      /* ⏭ next section */
+.ph.ph-caret-double-left:before { content: "\e128"; }  /* ⏪ back one paragraph */
+.ph.ph-caret-double-right:before { content: "\e12a"; } /* ⏩ forward one paragraph */
+.ph.ph-caret-left:before { content: "\e138"; }        /* ◀ previous page */
+.ph.ph-caret-right:before { content: "\e13a"; }       /* ▶ next page */
+.ph.ph-magnifying-glass-minus:before { content: "\e30e"; } /* zoom out */
+.ph.ph-magnifying-glass-plus:before { content: "\e310"; }  /* zoom in */
+.ph.ph-arrows-in:before { content: "\e09a"; }         /* fit to screen (width) */
