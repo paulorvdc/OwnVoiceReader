@@ -25,7 +25,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..model import BBox, Block, ReadingDocument, ReadingEvent, ReadingEventType
+from ..model import BBox, Block, BlockKind, ReadingDocument, ReadingEvent, ReadingEventType
 from ..voice import get_style, style_names
 from ..voice.tts_engine import TtsEngine, TtsUnavailable
 from .sections import (
@@ -310,6 +310,11 @@ class Orchestrator:
         # queue holds a mix of :class:`ExplainItem` (split at fire time) and
         # :class:`_Speak` (a marker / a pre-cut chunk).
         self._pending_explain: deque = deque()
+        # M5 C6: the figure/table media (a cropped image / a cell grid) the viewer
+        # shows *below* the spoken text while an explanation plays — the "cut sent
+        # to the VLM". Computed unconditionally (a cheap block scan, no LLM) so the
+        # cut shows whether or not a vision model is present.
+        self.media_by_target = self._build_media()
         # Spoken bookends around each explanation ("Now, a closer look…" / "Back
         # to the text."). On by default; off for a plainer read.
         self.explain_markers = True
@@ -570,15 +575,68 @@ class Orchestrator:
             log.exception("TTS error")
             return None
 
+    def _build_media(self) -> dict:
+        """Map each figure/table **target** to the block that holds its pixels
+        (a FIGURE's cropped image) or cells (a TABLE's grid) — the media the
+        viewer renders below the spoken text while the explanation plays (M5 C6).
+
+        Reuses the M2.5 ``link_media`` pairing (each media block with the nearest
+        same-page caption's target). It is a pure block scan with **no** LLM call,
+        so it runs for *every* read (vision on or off) and is safe to fail: a
+        media error must never take down the spoken read, so we degrade to ``{}``."""
+        try:
+            from ..llm.explainer import link_media
+
+            return link_media(self.doc.blocks)
+        except Exception:  # pragma: no cover - media is cosmetic; never abort the read
+            log.exception("could not link figure/table media")
+            return {}
+
+    def _media_for(self, item: ExplainItem):
+        """The media the viewer shows below the text for ``item``'s explanation:
+
+          * a **figure** → its cropped image, as a base64 data URI so the whole
+            "cut" travels in the event frame (no separate fetch, no state to keep
+            in sync on unload — fine for a local, offline app);
+          * a **table** → its cell grid, which the viewer renders as a markdown
+            table (a "markdown version of the table").
+
+        ``None`` when the target has no linked media block (e.g. its caption sits
+        on another page, so ``link_media`` did not pair it), in which case the
+        spoken base plays with no visual.
+        """
+        block = self.media_by_target.get(item.target)
+        if block is None:
+            return None
+        if item.kind is BlockKind.TABLE:
+            grid = block.table_grid
+            if not grid:
+                return None
+            return {"kind": "table", "caption": item.caption or "", "grid": grid}
+        # A figure: its cropped image, if any (a vector-only figure may carry none).
+        image = block.image
+        if not image:
+            return None
+        import base64
+
+        data_uri = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+        return {"kind": "figure", "caption": item.caption or "", "image": data_uri}
+
     def _explain_meta(self, item: ExplainItem, phase: str) -> dict:
         """The event meta for an explanation unit (a body chunk or a start marker).
 
         Carries the figure/table's target / page / bbox for the follow-along
         highlight, plus ``phase`` ("start" / "body" / "end") so the viewer can
-        style it. There is **no** ``index`` on purpose: an explanation is a pending
-        follow-on, not a cue, so the cue counter is never advanced by it."""
+        style it. M5 C6 also attaches the ``media`` (the "cut sent to the VLM" — a
+        figure's cropped image or a table's cell grid) so the viewer can render it
+        below the spoken text while the explanation plays. There is **no**
+        ``index`` on purpose: an explanation is a pending follow-on, not a cue, so
+        the cue counter is never advanced by it."""
         meta = dict(item.meta)
         meta["phase"] = phase
+        media = self._media_for(item)
+        if media is not None:
+            meta["media"] = media
         return meta
 
     def _queue_explanation_group(self, items: list[ExplainItem], *,

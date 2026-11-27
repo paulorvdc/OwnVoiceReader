@@ -65,6 +65,9 @@
     nowSection: $("now-section"),
     lyricsList: $("lyrics-list"),
     lyricsNow: $("lyrics-now"),
+    // M5 C6: the figure/table being explained (its cropped image / cell grid),
+    // shown in the now-reading panel below the head while an explanation plays.
+    lyricsMedia: $("lyrics-media"),
     themeBtn: $("theme-btn"),
     audioOut: $("audio-out"),
   };
@@ -283,6 +286,10 @@
       // *produce* the next cue a beat before it is actually heard.
       this._pendingAudioEvent = null;
       this._pendingLine = null;
+      // M5 C6: the figure/table currently shown below the transcript; its target
+      // dedupes re-renders so the many body chunks of one long description
+      // rebuild the media once, not per chunk.
+      this._mediaTarget = null;
       this.waitingForCue = false;
       this.expectingAudio = false;
       this.audioMeta = null;
@@ -526,6 +533,7 @@
       this.setProgress(this.cueCount, this.cueCount);
       setStatus("finished reading", "ok");
       el.lyricsNow.textContent = "— end of reading —";
+      this.hideMedia();
     }
 
     onState(s) {
@@ -877,6 +885,12 @@
         if (targetPage !== pageNum) gotoPage(targetPage);
       }
       if (lineEl) this._markCurrentLine(lineEl);
+      // M5 C6: show the figure/table being explained (its cropped image / cell
+      // grid) below the head while the explanation is heard; hide it once the next
+      // unit carries no media (the "Back to the text." marker or the next prose
+      // cue resumes prose).
+      if (ev.meta && ev.meta.media) this.showMedia(ev.meta);
+      else this.hideMedia();
     }
 
     _markCurrentLine(lineEl) {
@@ -902,6 +916,63 @@
           (lineRect.top - listRect.top) - (el.lyricsList.clientHeight - lineEl.clientHeight) / 2;
       }
     }
+
+    // M5 C6: render the figure/table being explained below the now-reading head —
+    // a figure's cropped image, or a table's cell grid as a markdown-style table.
+    // Deduped by target so the many body chunks of one long description rebuild
+    // the media once, not per chunk.
+    showMedia(meta) {
+      const m = meta.media;
+      if (!el.lyricsMedia || !m) return;
+      // The body chunks of one explanation share a target, so re-render only when
+      // the explained figure/table changes (a new target).
+      const target = meta.target || m.target || null;
+      if (this._mediaTarget === target && el.lyricsMedia.childElementCount > 0) return;
+      this._mediaTarget = target;
+      el.lyricsMedia.innerHTML = "";
+      // Title: "Figure 3" / "Table 2" (+ the caption, if any) under the head.
+      const labelWord = meta.label_word || "";
+      const label = meta.label || "";
+      const title = document.createElement("div");
+      title.className = "media-title";
+      title.textContent = (labelWord + " " + label).trim() +
+        (m.caption ? " — " + m.caption : "");
+      el.lyricsMedia.appendChild(title);
+      if (m.kind === "table") {
+        el.lyricsMedia.appendChild(this._renderTable(m.grid || []));
+      } else if (m.kind === "figure" && m.image) {
+        const img = document.createElement("img");
+        img.className = "media-figure";
+        img.alt = title.textContent;
+        img.src = m.image;            // a base64 data URI from the event
+        el.lyricsMedia.appendChild(img);
+      }
+      el.lyricsMedia.classList.remove("hidden");
+    }
+
+    // Build a markdown-style HTML table from a table's cell grid. Cells are set
+    // via textContent (never innerHTML) so PDF text can't inject markup.
+    _renderTable(grid) {
+      const table = document.createElement("table");
+      table.className = "media-table";
+      grid.forEach((row, i) => {
+        const tr = document.createElement("tr");
+        (row || []).forEach((cell) => {
+          const th = document.createElement(i === 0 ? "th" : "td");
+          th.textContent = cell == null ? "" : String(cell);
+          tr.appendChild(th);
+        });
+        table.appendChild(tr);
+      });
+      return table;
+    }
+
+    hideMedia() {
+      if (!el.lyricsMedia) return;
+      this._mediaTarget = null;
+      el.lyricsMedia.innerHTML = "";
+      el.lyricsMedia.classList.add("hidden");
+    }
   }
 
   function setupReader() {
@@ -919,6 +990,8 @@
     el.lyricsList.innerHTML = "";
     el.lyricsNow.textContent = "…";
     if (el.nowSection) el.nowSection.textContent = "";
+    // M5 C6: clear any figure/table shown for the previous document.
+    if (el.lyricsMedia) { el.lyricsMedia.innerHTML = ""; el.lyricsMedia.classList.add("hidden"); }
     reader = new Reader();
     reader.connect();
   }

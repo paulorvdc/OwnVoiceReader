@@ -347,3 +347,71 @@ def test_orchestrator_body_meta_has_phase_and_no_index():
     assert m["target"] == "fig:3"
     # The pending-follow-on invariant holds: an explanation never carries an index.
     assert "index" not in m
+
+
+# --------------------------------------------------------------------------- #
+# M5 C6 — the EXPLAIN event carries the figure/table media (the "cut sent to the
+# VLM"): a figure's cropped image (a base64 data URI) or a table's cell grid, so
+# the viewer can render it below the spoken text. Absent when no media block is
+# linked to the target (graceful — the spoken base still plays, no visual).
+# --------------------------------------------------------------------------- #
+def test_explain_event_carries_figure_media():
+    # A figure with a same-page caption + a prose reference: its cropped image
+    # (here fake bytes) must ride along in the EXPLAIN event's meta as a data URI.
+    cap = B("Figure 1: A pipeline diagram.", 0, bid="cap")
+    cap.bbox = BBox(0, 50, 300, 60)                    # the caption text on page 0
+    fig = Block.figure_block(image=b"\x89PNG-fake-bytes", page=0,
+                            bbox=BBox(10, 10, 90, 90))  # the cropped figure
+    ref = B("We show the pipeline in Figure 1.", 0, bid="ref")
+    doc = ReadingDocument()
+    doc.blocks = [cap, fig, ref]
+    orch = Orchestrator(doc, None)
+    events = _drive(orch)
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    assert body, [e.type.value for e in events]
+    m = body[0].meta
+    assert m.get("target") == "fig:1"
+    media = m.get("media")
+    assert media is not None, "a linked figure must attach its media"
+    assert media["kind"] == "figure"
+    assert media["image"].startswith("data:image/png;base64,")
+    assert media["caption"] == "A pipeline diagram."
+    assert "grid" not in media
+    # The pending-follow-on invariant still holds even with media attached.
+    assert "index" not in m
+
+
+def test_explain_event_carries_table_grid():
+    # A table with a same-page caption + a prose reference: its cell grid (the
+    # "markdown version of the table") must ride along in the EXPLAIN event meta.
+    cap = B("Table 1: Dataset statistics.", 0, bid="cap")
+    cap.bbox = BBox(0, 50, 300, 60)
+    grid = [["model", "acc"], ["ours", "91"], ["base", "88"]]
+    tab = Block.table_block(table_grid=grid, page=0, bbox=BBox(10, 10, 90, 90))
+    ref = B("Table 1 reports the accuracy.", 0, bid="ref")
+    doc = ReadingDocument()
+    doc.blocks = [cap, tab, ref]
+    orch = Orchestrator(doc, None)
+    events = _drive(orch)
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    assert body, [e.type.value for e in events]
+    media = body[0].meta.get("media")
+    assert media is not None, "a linked table must attach its grid"
+    assert media["kind"] == "table"
+    assert media["grid"] == grid
+    assert "image" not in media
+
+
+def test_explain_event_has_no_media_when_unlinked():
+    # A figure referenced in prose but with no media block / same-page caption to
+    # pair it: the spoken base still fires, but no media is attached (graceful).
+    doc = ReadingDocument()
+    doc.blocks = [B("We refer to Figure 5 for the results.", 0)]
+    orch = Orchestrator(doc, None)
+    events = _drive(orch)
+    body = [e for e in events
+            if e.type == ReadingEventType.EXPLAIN and e.meta.get("phase") == "body"]
+    assert body, [e.type.value for e in events]
+    assert "media" not in body[0].meta

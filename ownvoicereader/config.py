@@ -39,10 +39,6 @@ DEFAULT_CONFIG_PATH = Path("~/.ownvoicereader/config.yaml")
 # These are passed through to the LLM/TTS clients untouched; we never persist
 # them. Documented in the README so the user knows exactly what is read.
 PROVIDER_ENV_VARS: tuple[str, ...] = (
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "ELEVENLABS_API_KEY",
-    "ANTHROPIC_API_KEY",
     "OLLAMA_HOST",
     "OLLAMA_MODELS",
 )

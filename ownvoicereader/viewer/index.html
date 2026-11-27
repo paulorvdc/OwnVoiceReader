@@ -248,6 +248,30 @@
        but is no longer shown — the now-reading panel now stays as a side card
        (M5 C5) instead of collapsing to a bottom line. */
     .lyrics-now { display: none; }
+    /* M5 C6: the figure/table being explained — its cropped image (a figure) or its
+       cell grid rendered as a markdown table — shown in the now-reading panel below
+       the head while an explanation plays, and hidden (via the global .hidden rule)
+       when the prose resumes. It caps at ~45% of the panel so the transcript keeps
+       scrolling beneath it. */
+    .lyrics-media {
+      flex: 0 0 auto; max-height: 45%; overflow-y: auto;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .lyrics-media .media-title {
+      font-size: 15px; font-weight: 600; color: var(--accent);
+      margin-bottom: 6px; line-height: 1.3;
+    }
+    .lyrics-media .media-figure {
+      max-width: 100%; height: auto; display: block; margin: 0 auto;
+      border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    }
+    .lyrics-media .media-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .lyrics-media .media-table th,
+    .lyrics-media .media-table td {
+      border: 1px solid var(--border); padding: 4px 8px;
+      text-align: left; vertical-align: top;
+    }
+    .lyrics-media .media-table th { background: var(--bg-elev); font-weight: 600; }
 
     /* M5 C5 responsive collapse — the side cards give way in this order as the
        window narrows: (1) the thick inner margins shrink first, (2) the SETTINGS
@@ -386,6 +410,10 @@
         <span class="label">NOW READING</span>
         <span class="section" id="now-section" title="current section"></span>
       </div>
+      <!-- M5 C6: the figure/table being explained — its cropped image (a figure)
+           or its cell grid as a markdown table (a table) — shown below the head
+           while an explanation plays; hidden when the prose resumes. -->
+      <div id="lyrics-media" class="lyrics-media hidden" aria-label="Figure or table being explained"></div>
       <div id="lyrics-list" class="lyrics-list"></div>
       <div id="lyrics-now" class="lyrics-now">…</div>
     </aside>
