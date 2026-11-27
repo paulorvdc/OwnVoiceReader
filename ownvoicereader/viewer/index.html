@@ -9,6 +9,11 @@
   <!-- M5 C7: one minimalist icon pack (Phosphor, regular weight) vendored for
        offline use — no CDN, no network. See vendor/phosphor/phosphor.css. -->
   <link rel="stylesheet" href="/viewer/vendor/phosphor/phosphor.css" />
+  <!-- M6 branding: the browser-tab + apple-touch icon. The full icon family
+       (16→1024 + .ico/.icns) lives in viewer/imgs/ and ships in the binary. -->
+  <link rel="icon" type="image/svg+xml" href="/viewer/imgs/favicon.svg" />
+  <link rel="icon" href="/viewer/imgs/favicon.ico" />
+  <link rel="apple-touch-icon" href="/viewer/imgs/apple-touch-icon.png" />
   <style>
     /* M5 C2: three colour schemes, all keyed off <html data-theme>. Light
        high-contrast is the default (the low-vision primary target); the header
@@ -84,12 +89,26 @@
        to signal on/off, so they read on any of the three schemes. */
     .badge.env, .badge.vision { border-color: var(--ok); }
     .badge.vision-off, .badge.off { border-color: var(--err); }
+    /* M6 branding: the header logo = the mono app icon (inlined so its
+       currentColor follows the theme's --fg) + the wordmark. */
+    .brand { display: inline-flex; align-items: center; gap: 8px; }
+    .brand-icon { color: var(--fg); flex: 0 0 auto; }
 
     .screen { flex: 1 1 auto; min-height: 0; overflow: auto; }
     .hidden { display: none !important; }
 
-    /* Landing / drop zone */
-    #landing { display: grid; place-items: center; }
+    /* Landing / drop zone — the hero banner sits above the drop, both centred. */
+    #landing { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+    /* M6 branding: the theme-switched hero banner — a light + dark lockup, chosen
+       by <html data-theme> (CSS-only, so no flash: the head script sets the theme
+       before first paint). Light on Light; dark on Dark + Dracula. */
+    .landing-hero { width: min(720px, 86vw); }
+    .landing-hero .banner { display: block; width: 100%; height: auto; }
+    .landing-hero .banner-dark { display: none; }
+    [data-theme="dark"] .landing-hero .banner-light,
+    [data-theme="dracula"] .landing-hero .banner-light { display: none; }
+    [data-theme="dark"] .landing-hero .banner-dark,
+    [data-theme="dracula"] .landing-hero .banner-dark { display: block; }
     .drop {
       width: min(560px, 90vw); text-align: center;
       border: 2px dashed var(--border); border-radius: 14px;
@@ -360,7 +379,21 @@
 </head>
 <body>
   <header>
-    <h1>OwnVoiceReader</h1>
+    <!-- M6 branding: the logo = the mono app icon (inlined so its currentColor
+         follows the theme's --fg) + the 'OwnVoiceReader' wordmark (kept as text
+         for the low-vision target). -->
+    <span class="brand">
+      <svg class="brand-icon" viewBox="0 0 96 96" width="26" height="26" role="img"
+           aria-label="OwnVoiceReader">
+        <g transform="translate(-4 0)" fill="none" stroke="currentColor"
+           stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 24a8 8 0 0 1 8-8H50L62 28V72a8 8 0 0 1-8 8H30a8 8 0 0 1-8-8Z" stroke-width="4"/>
+          <path d="M31 41h22M31 53h22M31 65h13" stroke-width="5"/>
+          <path d="M71 39a14 14 0 0 1 0 18M80 31a26 26 0 0 1 0 34" stroke-width="5"/>
+        </g>
+      </svg>
+      <h1>OwnVoiceReader</h1>
+    </span>
     <span class="subtitle">your model, your voice, your machine</span>
     <div class="doc-info" id="doc-info"></div>
     <button id="burger" class="theme-btn" title="Settings panel" aria-label="Toggle settings panel"><i class="ph ph-list"></i></button>
@@ -370,6 +403,14 @@
 
   <!-- Landing (no document loaded) -->
   <section id="landing" class="screen">
+    <!-- M6 branding: the theme-switched hero banner (light on Light; dark on
+         Dark + Dracula) — the full lockup is icon + wordmark + tagline. -->
+    <div class="landing-hero" aria-label="OwnVoiceReader — your model, your voice, your machine">
+      <img class="banner banner-light" src="/viewer/imgs/ownvoicereader-banner-light.svg"
+           alt="OwnVoiceReader — your model, your voice, your machine" />
+      <img class="banner banner-dark" src="/viewer/imgs/ownvoicereader-banner-dark.svg"
+           alt="OwnVoiceReader — your model, your voice, your machine" />
+    </div>
     <div id="drop" class="drop">
       <p class="drop-title">Drop a PDF here</p>
       <p class="drop-sub">or</p>
