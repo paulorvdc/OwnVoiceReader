@@ -124,6 +124,8 @@ def find_mentions(text: str) -> list[Reference]:
 
     ``raw`` is the matched substring; ``target`` is the normalized key.
     ``page`` and ``block_id`` are left empty (the caller stamps them per block)."""
+    if not isinstance(text, str):  # a non-string input yields no references, never a crash
+        return []
     out: list[Reference] = []
     for m in _MENTION_RE.finditer(text):
         kind, target = _normalize(m.group("kind"), m.group("num"), m.group("sub") or "")
@@ -221,6 +223,7 @@ def build_index(blocks: list[Block]) -> ReferenceIndex:
     blocks for prose references and records, per target, the first one in reading
     order — that position is the "right moment" to explain.
     """
+    blocks = blocks or []  # a missing/None block list yields an empty index, never a crash
     idx = ReferenceIndex()
     caption_block_ids: set[str] = set()
 

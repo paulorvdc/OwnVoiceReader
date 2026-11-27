@@ -239,6 +239,11 @@ def build_explain_schedule(
     reference (caption-only) is *not* scheduled — it has no reference moment to
     fire on (A7 fires on references, not on caption position).
     """
+    # A missing/None index or an empty cue stream yields an empty schedule, never a
+    # crash (the "degrade, never abort" contract the rest of the reader follows).
+    if not reference_index or not cues:
+        return {}
+    blocks = blocks or []
     # Each block's cues are contiguous; record the first cue of each block (in
     # reading order) so a reference search can be bounded to its own block.
     block_first_cue: dict[str, int] = {}

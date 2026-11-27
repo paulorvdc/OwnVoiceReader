@@ -257,6 +257,7 @@ def order_lines(
     ``page_geometry`` is a list of ``(width, height)`` per page (from
     :meth:`PdfSource.page_widths_heights`).
     """
+    lines = lines or []  # a missing/None line list yields no blocks, never a crash
     by_page: dict[int, list[Line]] = {}
     for ln in lines:
         by_page.setdefault(ln.page, []).append(ln)
