@@ -10,6 +10,7 @@ import pytest
 
 from ownvoicereader.voice import (
     build_tts_engine,
+    ensure_default_voice,
     get_style,
     style_names,
     STYLES,
@@ -59,3 +60,70 @@ def test_piper_smoke_if_available():
         pytest.skip("piper not the active engine")
     wav = asyncio.run(eng.synthesize("Hello. This is a smoke test."))
     assert wav and wav[:4] == b"RIFF"
+
+
+# --------------------------------------------------------------------------- #
+# M6 Phase 2: the bundled default voice, copied on first run
+# --------------------------------------------------------------------------- #
+def _make_bundled_voice(bundled_dir, voice="en_US-lessac-medium"):
+    """Lay down a fake bundled voice: a tiny .onnx + its .onnx.json config."""
+    bundled_dir.mkdir(parents=True, exist_ok=True)
+    (bundled_dir / f"{voice}.onnx").write_bytes(b"FAKE-ONNX-MODEL-BYTES")
+    (bundled_dir / f"{voice}.onnx.json").write_text('{"sampling_rate": 22050}')
+
+
+def test_ensure_default_voice_copies_on_first_run(tmp_path):
+    """A bundled voice is copied into a (missing) user voice dir on first run."""
+    bundled = tmp_path / "bundled"
+    _make_bundled_voice(bundled)
+    target = tmp_path / "voices"  # does not exist yet
+    out = ensure_default_voice(voice_dir=target, bundled_dir=bundled)
+    assert out == target / "en_US-lessac-medium.onnx"
+    assert out.is_file()
+    assert out.read_bytes() == b"FAKE-ONNX-MODEL-BYTES"
+    # the config travels with the model
+    assert (target / "en_US-lessac-medium.onnx.json").is_file()
+
+
+def test_ensure_default_voice_is_idempotent(tmp_path):
+    """A second run with the same voice present is a no-op (matched by name + size)."""
+    bundled = tmp_path / "bundled"
+    _make_bundled_voice(bundled)
+    target = tmp_path / "voices"
+    first = ensure_default_voice(voice_dir=target, bundled_dir=bundled)
+    assert first is not None
+    second = ensure_default_voice(voice_dir=target, bundled_dir=bundled)
+    assert second == first
+    # exactly one copy, never duplicated
+    assert list(target.glob("*.onnx")) == [target / "en_US-lessac-medium.onnx"]
+
+
+def test_ensure_default_voice_no_bundled_voice_is_a_noop(tmp_path):
+    """With no bundled voice there is nothing to copy: None, and nothing created."""
+    target = tmp_path / "voices"
+    out = ensure_default_voice(voice_dir=target, bundled_dir=tmp_path / "empty-bundled")
+    assert out is None
+    assert not target.exists()  # a missing target is not created for nothing
+
+
+def test_ensure_default_voice_degrades_on_bad_target(tmp_path):
+    """A target that can't be written is logged, never fatal (degrade, never abort)."""
+    bundled = tmp_path / "bundled"
+    _make_bundled_voice(bundled)
+    a_file = tmp_path / "a-file"      # voice_dir points at a *file* -> mkdir raises
+    a_file.write_text("x")
+    out = ensure_default_voice(voice_dir=a_file, bundled_dir=bundled)
+    assert out is None
+
+
+def test_build_tts_engine_ensures_default_voice(monkeypatch, tmp_path):
+    """build_tts_engine ensures the bundled voice is present before picking an engine."""
+    from ownvoicereader.voice import tts_engine
+
+    calls = []
+    monkeypatch.setattr(
+        tts_engine, "ensure_default_voice",
+        lambda *a, **k: calls.append((a, k)) or None,
+    )
+    tts_engine.build_tts_engine(voice_dir=tmp_path / "voices")
+    assert calls, "build_tts_engine should call ensure_default_voice on every build"

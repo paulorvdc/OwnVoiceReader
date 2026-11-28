@@ -86,6 +86,9 @@ ownvoicereader = [
     "viewer/vendor/pdfjs/*.js",
     "viewer/vendor/phosphor/*",
     "viewer/imgs/*",
+    # M6 Phase 2: the bundled default voice (en_US-lessac-medium) so a fresh install
+    # reads out of the box, offline (copied into the user voice dir on first run).
+    "voice/models/*",
 ]
 
 [tool.pytest.ini_options]

@@ -27,6 +27,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
@@ -241,7 +242,6 @@ def locate_piper_binary() -> Optional[str]:
     if found:
         return found
     # The console script lives next to the interpreter running the app.
-    import sys
     cand = Path(sys.executable).parent / "piper"
     if _bin_exists(str(cand)):
         return str(cand)
@@ -256,6 +256,57 @@ def locate_voice_dir() -> Path:
     return DEFAULT_VOICE_DIR
 
 
+def _bundled_voice_dir() -> Path:
+    """Locate the voice models shipped inside the app (M6 Phase 2).
+
+    In a normal (pip/conda) install they live next to the package
+    (``<pkg>/voice/models``). Under a frozen build they're extracted beside the
+    executable (one-dir) or into a temp ``_MEIPASS`` dir (one-file) — resolve
+    against that, mirroring the viewer dir resolver in ``server/app.py``.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable)))
+        cand = base / "voice" / "models"
+        if cand.is_dir():
+            return cand
+    return Path(__file__).resolve().parent / "models"
+
+
+def ensure_default_voice(voice_dir: Optional[Path] = None,
+                        voice: str = DEFAULT_VOICE,
+                        bundled_dir: Optional[Path] = None) -> Optional[Path]:
+    """Copy the bundled default voice into the (writable) user voice dir, first run.
+
+    Out-of-the-box voice: the app ships ``en_US-lessac-medium``; this copies it into
+    the user's voice cache the first time, so the reader has a natural voice with no
+    download and no setup. Best-effort and idempotent: a voice already present
+    (matched by name *and* size) is left alone, and a copy that fails (a read-only
+    target, …) is logged, never fatal — "degrade, never abort." ``OWNVOICEREADER_VOICE_DIR``
+    still overrides the target. Returns the model path it ensured, or ``None`` if
+    there is no bundled voice to copy (e.g. a bare pip install that omits the model).
+    """
+    src_dir = Path(bundled_dir) if bundled_dir else _bundled_voice_dir()
+    onnx_src = src_dir / f"{voice}.onnx"
+    if not onnx_src.is_file():
+        return None  # no bundled voice -> nothing to ensure
+    dst_dir = Path(voice_dir) if voice_dir else locate_voice_dir()
+    onnx_dst = dst_dir / onnx_src.name
+    # Idempotent: an identical-size copy already present means we're done.
+    if onnx_dst.is_file() and onnx_dst.stat().st_size == onnx_src.stat().st_size:
+        return onnx_dst
+    try:
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(onnx_src, onnx_dst)
+        cfg_src = src_dir / f"{voice}.onnx.json"
+        if cfg_src.is_file():
+            shutil.copy2(cfg_src, dst_dir / f"{voice}.onnx.json")
+    except OSError as exc:
+        log.warning("could not copy the bundled voice to %s: %s", dst_dir, exc)
+        return None
+    log.info("ensured default voice on first run: %s -> %s", onnx_src.name, onnx_dst)
+    return onnx_dst
+
+
 def build_tts_engine(config=None, voice: Optional[str] = None,
                      voice_dir: Optional[Path] = None) -> Optional[TtsEngine]:
     """Pick the best available local engine.
@@ -266,6 +317,10 @@ def build_tts_engine(config=None, voice: Optional[str] = None,
     """
     vdir = Path(voice_dir) if voice_dir else locate_voice_dir()
     vname = voice or (config.voice if config else None) or DEFAULT_VOICE
+
+    # Phase 2: make sure the bundled default voice is in the user's voice dir, so a
+    # fresh install reads out of the box, offline. A no-op when no voice ships.
+    ensure_default_voice(vdir, voice=vname)
 
     piper_bin = locate_piper_binary()
     if piper_bin:

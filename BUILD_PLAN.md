@@ -429,7 +429,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
   - _✅ **C7 done.** One minimalist icon pack — **Phosphor (regular weight)**, vendored **offline** (`viewer/vendor/phosphor/Phosphor.woff2` + a trimmed `phosphor.css` with only the ~18 glyphs used; follows the existing pdfjs-vendoring pattern, no CDN/network). Every control now uses the same family: the **header** (☰ settings, the 📄↔📖 cycler, and the theme toggle — sun / moon / palette), the **footer** (page-nav, zoom, and the reading transport, all **uniform square `.icon-btn`s**), and the **settings** (⟳ refresh + 💾 save glyphs). The **PDF opens fit-to-width by default** (was a fixed 110%); the "Fit" button + `f` key re-fit. Buttons that sit next to each other are now **uniform**, and the **local-only toggle moved *into* the vision group** with a full-contrast label so it matches that block's style. The dynamic icons (theme, the PDF/reading cycler, play/pause) swap via a small `innerHTML` helper, and two status strings that used a literal ▶ glyph were de-staled to words. Viewer-only — no new tests; full suite still **206**._
 > 📝 comment:
 
-### M6 — Packaging (later, post-v1)  _status: [~] hardening + window host done · binary next_
+### M6 — Packaging (later, post-v1)  _status: [~] hardening + window host + voice done · binary next_
 > **Hardening first, then the binary.** The old *Hardening* milestone was folded
 > here: its pending items lead the packaging work. The two already-decided items are
 > not carried as tasks — graceful LLM-down / TTS-down degradation already shipped with
@@ -472,8 +472,26 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
     (`fit_to_screen`: `min(ideal, screen)` per axis, read from `webview.screens`), so it
     never exceeds the display. **250 pass**
     (+11 in `tests/test_window.py`)._
-- [ ] **bundle the voice** — copy `en_US-lessac-medium` into the user voice dir on first run — M6 Phase 2
-- [ ] **PyInstaller** cross-platform binary + per-OS installers (`.exe` / AppImage / `.dmg`) + a CI matrix — M6 Phase 3
+- [x] **bundle the voice** — copy `en_US-lessac-medium` into the user voice dir on first run — M6 Phase 2
+  - _✅ **Phase 2 done (voice bundled).** `ensure_default_voice()` in
+    `ownvoicereader/voice/tts_engine.py` copies the bundled `en_US-lessac-medium`
+    into the user's voice cache the **first run** (idempotent: matched by name +
+    size, so a present voice is left alone; best-effort: a bad target is logged,
+    never fatal — "degrade, never abort"), and `build_tts_engine` calls it before
+    picking an engine, so any build reads out of the box, offline. The model
+    (63 MB `.onnx` + its 4.9 KB `.onnx.json`) ships in `voice/models/`, in
+    `package-data`, and **via Git LFS** so the git history stays lean — the
+    staged `.onnx` is a **133-byte pointer** (`.git/objects` stays ~5 MB; the
+    bytes live in the LFS cache and go to the LFS server on push; verified the
+    pointer materializes back to the real 63 MB with a matching sha256).
+    `OWNVOICEREADER_VOICE_DIR` still overrides the target. **+5 tests** in
+    `tests/test_voice.py` (all hermetic, temp-dir), full suite **250 pass**._
+- [ ] **per-OS installers + a CI matrix** — PyInstaller onedir, each OS built on its own runner — M6 Phase 3
+  - _Distribution model (decided): the **binaries never touch git** — each OS
+    runner (ubuntu / macOS / windows) builds its installer and attaches it to the
+    **GitHub Release page** via `.github/workflows/build.yml`. The 63 MB voice
+    travels via **Git LFS** (CI does `git lfs pull`). So git stays lean, all
+    three installers land on the Release, and no cross-compile._
 > 📝 comment: A12 (`--auto --no-browser` headless polish) was **scrapped** as a
 > planning item — the existing `--auto` / `_run_headless` code + its tests stay;
 > the headless path remains functional, it's just no longer an M6 task.
