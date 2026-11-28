@@ -228,3 +228,24 @@ __marimo__/
 
 # IDE
 .vscode/
+
+# --- Installer pipeline (KEEP) + installer artifacts (NEVER commit) ----------
+# The packaging/ pipeline is *source*: the spec + entry scripts + build helpers are
+# what generate the installers, so they are committed. Re-include them despite the
+# generic PyInstaller ignores above (`.spec`/`.manifest` target throwaway auto-
+# generated spec stubs, not our hand-written build spec — see *.spec / *.manifest).
+!packaging/
+!packaging/**
+
+# The artifacts the pipeline PRODUCES are never committed: binaries land only on the
+# GitHub Release page via Actions, and the 63 MB voice travels via Git LFS (so git
+# stays lean). build/ and dist/ are ignored above; the patterns below catch a stray
+# output that lands anywhere else (e.g. a CWD-relative tar) and name the exact
+# installer outputs the build produces, so nothing large ever reaches git.
+OwnVoiceReader-*.AppImage
+OwnVoiceReader-*.dmg
+OwnVoiceReader-*.exe
+OwnVoiceReader-*.msi
+OwnVoiceReader-*.zip
+OwnVoiceReader-*.tar.gz
+squashfs-root/

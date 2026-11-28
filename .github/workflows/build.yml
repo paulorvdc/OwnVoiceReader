@@ -1,0 +1,150 @@
+# .github/workflows/build.yml — the M6 packaging pipeline.
+#
+# Builds the cross-platform desktop binary (core + vision + ocr + the windowed
+# host + the bundled Piper voice + the bundled Piper TTS subprocess) and ships,
+# per OS, BOTH a native installer AND a compressed zip (the smaller, portable,
+# no-install download). Binaries land ONLY here on the GitHub Release page — git
+# stays lean: the 63 MB voice travels via Git LFS, and no build output is ever
+# committed (see .gitignore).
+#
+# Triggers:
+#   * push of a v* tag  -> build every OS + publish a release.
+#   * workflow_dispatch  -> build every OS + upload artifacts (downloadable from the
+#                           run page) WITHOUT publishing (manual / pipeline check).
+#
+# Python 3.12 is the conservative choice for third-party wheel availability
+# (piper-tts / rapidocr); the local dev env is 3.13 — bump PYTHON_VERSION to align
+# once the wheels confirm.
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read   # release job overrides to write (to create the release)
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Release build flags (the spec reads these at build time):
+  #   OV_BUNDLE_PIPER=1 -> bundle the piper TTS subprocess (self-contained, offline)
+  #   OV_CONSOLE=0      -> a silent GUI build (the release default; OV_CONSOLE=1 is
+  #                        the debuggable console twin for --auto / local dev)
+  OV_BUNDLE_PIPER: "1"
+  OV_CONSOLE: "0"
+
+jobs:
+  # --------------------------------------------------------------------------
+  # 1) The unit + integration suite (the ~250 tests, incl. the A6 local-only
+  #    invariant). Ubuntu only — the tests don't need a window/display. A green
+  #    build requires a green test.
+  # --------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with the LFS voice)
+        uses: actions/checkout@v4
+        with:
+          lfs: true   # fetch the 63 MB voice (it's a 133-byte pointer in git)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install (core + vision + ocr + desktop + test)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[server,ocr,vision,desktop]" pytest
+      - name: Test suite (exit 0 == green)
+        run: python -m pytest
+
+  # --------------------------------------------------------------------------
+  # 2) The cross-platform build — one job per OS. Each produces the native
+  #    installer + a zip, then uploads both as an artifact.
+  # --------------------------------------------------------------------------
+  build:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # one OS failing shouldn't cancel the others
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout (with the LFS voice)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install (core + vision + ocr + desktop + pyinstaller)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[server,ocr,vision,desktop]" pyinstaller
+
+      - name: Build the one-dir bundle
+        run: pyinstaller --noconfirm --clean packaging/ownvoicereader.spec
+
+      - name: Smoke — the bundled Piper synthesizes audio
+        # Proves the self-contained TTS path end-to-end (the core value), on every OS.
+        run: python packaging/smoke_tts.py
+
+      - name: Report bundle size
+        # Shell-agnostic (works on Linux/macOS/Windows): a single Python one-liner,
+        # no `du`/`||` (those don't exist in PowerShell).
+        run: python -c "from pathlib import Path; s=sum(f.stat().st_size for f in Path('dist/OwnVoiceReader').rglob('*') if f.is_file()); print('onedir', round(s/1e9,2), 'GB,', len(list(Path('dist/OwnVoiceReader').rglob('*'))), 'entries')"
+
+      # --- native installer (one per OS) + the portable zip --------------------
+      - name: Package — AppImage + zip (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          bash packaging/make_appimage.sh
+          ( cd dist && zip -9 -r OwnVoiceReader-Linux.zip OwnVoiceReader )
+
+      - name: Package — .dmg + zip (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          bash packaging/make_dmg.sh
+          ( cd dist && zip -9 -r OwnVoiceReader-macOS.zip OwnVoiceReader )
+
+      - name: Package — Inno Setup installer + zip (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          & ./packaging/make_installer.ps1
+          Compress-Archive -Path dist/OwnVoiceReader -DestinationPath dist/OwnVoiceReader-Windows.zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ runner.os }}
+          path: dist/OwnVoiceReader-*
+
+  # --------------------------------------------------------------------------
+  # 3) Publish to the GitHub Release page — only on a v* tag (manual dispatch
+  #    builds + uploads artifacts but does NOT publish, so you can check a build
+  #    without cutting a release).
+  # --------------------------------------------------------------------------
+  release:
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create/update the release
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: artifacts-*
+          merge-multiple: true
+      - name: Publish to the GitHub Release page
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          draft: false
