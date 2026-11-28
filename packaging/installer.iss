@@ -16,7 +16,11 @@
 
 [Setup]
 ; A fixed GUID identifies the app for uninstall; keep it stable across versions.
-AppId={{B2F4C8A1-7D3E-4A9C-9E2B-1F6A3C5D8E01}
+; No braces: Inno Setup 6's AppId takes any unique string. The {{...}} wrapping is a
+; legacy Windows-registry convention, and an unbalanced one (two '{' , one '}') puts the
+; ISPP preprocessor in error-recovery mode, which misreports the *next* directive
+; ("Unrecognized [Setup] section directive Architectures") even though it's valid.
+AppId=B2F4C8A1-7D3E-4A9C-9E2B-1F6A3C5D8E01
 AppName={#AppName}
 AppVersion=0.1.0
 AppPublisher=Paulo Viviurka do Carmo

@@ -146,6 +146,12 @@ MAIN_ENTRY = os.path.join(SPECPATH, "ownvoicereader_entry.py")
 # iconutil and passes it via OV_ICON; a missing .icns never breaks the build — we
 # fall back to PyInstaller's default). Linux/Windows take the PNG.
 ICON = os.environ.get("OV_ICON")
+if ICON:
+    # OV_ICON is given relative to the repo root (CI sets it that way); make it
+    # absolute. PyInstaller resolves icon= relative to the *spec's own directory*
+    # (packaging/), so a relative path would look in packaging/<OV_ICON> and miss the
+    # real file at <repo>/<OV_ICON>.
+    ICON = ICON if os.path.isabs(ICON) else os.path.join(REPO, ICON)
 if not ICON or not os.path.isfile(ICON):
     if IS_DARWIN:
         _icns = os.path.join(VIEWER, "imgs", "ownvoicereader.icns")
