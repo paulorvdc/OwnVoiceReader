@@ -46,18 +46,32 @@ def _main_binary() -> Path | None:
 
 
 def _bundled_voice(onnx_root: Path) -> Path | None:
-    """Find a bundled voice .onnx under either the onedir or the .app layout."""
+    """Find the bundled Piper voice .onnx under the onedir or .app layout.
+
+    The frozen bundle also carries *other* .onnx files — PyMuPDF's onnx layout
+    models under ``pymupdf/layout/resources/onnx/`` — so a blind ``rglob`` could hand
+    Piper one of *those* (it then looks for a voice config sidecar the model doesn't
+    have and crashes with FileNotFoundError). On a fresh CI runner the PyMuPDF model
+    sorts ahead of the voice in path order, so the fallback must never grab it. We
+    check the known voice-model dirs first, and any rglob fallback must resolve to a
+    file under a ``voice/models`` dir so a third-party onnx is never mistaken for the
+    voice.
+    """
     candidates = [
-        onnx_root / "_internal" / "voice" / "models",          # PyInstaller 6.x onedir
-        onnx_root,                                              # a flat layout
-        onnx_root / "Contents" / "Resources" / "_internal" / "voice" / "models",  # .app
+        onnx_root / APP / "_internal" / "voice" / "models",                              # onedir (Linux/Windows)
+        onnx_root / f"{APP}.app" / "Contents" / "Resources" / "_internal" / "voice" / "models",  # .app (macOS)
+        onnx_root / "_internal" / "voice" / "models",                                    # a flat _MEIPASS / one-file
+        onnx_root / "voice" / "models",                                                  # a flat layout
     ]
     for base in candidates:
-        found = next(base.glob("*.onnx"), None) if base.is_dir() else None
-        if found:
-            return found
+        if base.is_dir():
+            found = next(base.glob("*.onnx"), None)
+            if found:
+                return found
     for found in onnx_root.rglob("*.onnx"):
-        return found
+        parts = found.relative_to(onnx_root).parts
+        if "voice" in parts and "models" in parts:  # never a third-party (e.g. PyMuPDF) onnx
+            return found
     return None
 
 
@@ -72,17 +86,32 @@ def main() -> int:
         print(f"FAIL: no voice model found under {DIST}", file=sys.stderr)
         return 1
 
+    print(f"running Piper mode: {binary}  with voice {onnx}")
     out = Path(tempfile.mkdtemp(prefix="ov_smoke_"))
     text = "Hello. This is the bundled Piper voice, reading a paper."
     # The same invocation the app uses: the binary in Piper mode, text on stdin, a WAV
     # written to --output-dir. The sentinel makes this one binary run Piper's CLI.
-    proc = subprocess.run(
-        [str(binary), PIPER_SENTINEL, "-m", str(onnx), "--output-dir", str(out)],
-        input=text.encode("utf-8"),
-        timeout=180,
-    )
+    cmd = [str(binary), PIPER_SENTINEL, "-m", str(onnx), "--output-dir", str(out)]
+
+    # A Popen (not subprocess.run) so a *hang* is diagnosable: a run that never exits
+    # — a frozen GUI build that lingers after Piper's exception, or a model that won't
+    # load — is killed and its captured stderr printed, instead of a bare "timed out"
+    # with no signal (the failure mode CI hit on Windows before the rglob fix).
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    try:
+        _stdout, err = proc.communicate(input=text.encode("utf-8"), timeout=180)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        _stdout, err = proc.communicate()  # reap the killed child
+        tail = (err or b"").decode(errors="replace")[-800:]
+        print(f"FAIL: Piper mode hung >180s (no WAV produced). stderr tail:\n{tail}",
+              file=sys.stderr)
+        return 1
+
     if proc.returncode != 0:
-        print(f"FAIL: Piper mode exited {proc.returncode}:\n{proc.stderr.decode()[-400:]}",
+        err = (err or b"").decode(errors="replace")
+        print(f"FAIL: Piper mode exited {proc.returncode}:\n{err[-400:]}",
               file=sys.stderr)
         return 1
     wavs = [p for p in out.glob("*.wav") if p.stat().st_size > 0]
