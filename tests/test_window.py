@@ -111,3 +111,43 @@ def test_open_native_window_unavailable(monkeypatch):
     monkeypatch.setattr(webview, "start", _boom)
     with pytest.raises(window.WindowUnavailable):
         window.open_native_window("http://127.0.0.1:1/", on_close=lambda: None)
+
+
+# --------------------------------------------------------------------------- #
+# window sizing: the ideal (1440x900) on a large screen, the screen size when
+# it's smaller — so the window never exceeds the display
+# --------------------------------------------------------------------------- #
+def test_fit_to_screen_uses_ideal_on_a_large_screen():
+    # A 2560x1440 screen is bigger than the ideal, so we open at the ideal.
+    assert window.fit_to_screen(1440, 900, 2560, 1440) == (1440, 900)
+
+
+def test_fit_to_screen_uses_screen_when_smaller():
+    # A 1366x768 screen is smaller on both axes, so we fit to it exactly.
+    assert window.fit_to_screen(1440, 900, 1366, 768) == (1366, 768)
+
+
+def test_fit_to_screen_mixed_axes():
+    # Width fits the screen, height keeps the ideal — independently, per axis.
+    assert window.fit_to_screen(1440, 900, 1000, 1440) == (1000, 900)
+    assert window.fit_to_screen(1440, 900, 2560, 600) == (1440, 600)
+
+
+def test_screen_size_reads_the_largest_screen(monkeypatch):
+    webview = pytest.importorskip("webview")
+
+    class _Screen:
+        def __init__(self, w, h):
+            self.width, self.height = w, h
+
+    # The largest screen wins over a smaller secondary.
+    monkeypatch.setattr(webview, "screens",
+                        [_Screen(1366, 768), _Screen(2560, 1440)])
+    assert window._screen_size() == (2560, 1440)
+
+
+def test_screen_size_falls_back_to_ideal(monkeypatch):
+    webview = pytest.importorskip("webview")
+    # No screens (headless / before init): degrade to the ideal, never raise.
+    monkeypatch.setattr(webview, "screens", [])
+    assert window._screen_size() == (window.IDEAL_WIDTH, window.IDEAL_HEIGHT)

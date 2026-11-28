@@ -41,11 +41,14 @@ from .app import _open_when_ready
 
 log = logging.getLogger("ownvoicereader.window")
 
-# Window geometry — a comfortable reader, resizable down to a usable minimum.
+# Window geometry. The *ideal* size is 1440x900 — open at it on a large screen,
+# but fit to the screen when it's smaller (so the window never exceeds the
+# display; see fit_to_screen). min_size is just the resize floor, kept small so it
+# never fights a small-screen fit.
 DEFAULT_TITLE = "OwnVoiceReader"
-DEFAULT_WIDTH = 1100
-DEFAULT_HEIGHT = 760
-DEFAULT_MIN_SIZE = (900, 600)
+IDEAL_WIDTH = 1440
+IDEAL_HEIGHT = 900
+DEFAULT_MIN_SIZE = (640, 400)
 
 # QtWebEngine (Chromium) refuses to start under a restrictive sandbox unless told
 # otherwise — the case in most packaged/container/AppImage contexts, and a real
@@ -62,6 +65,39 @@ class WindowUnavailable(Exception):
 def _apply_webview_env() -> None:
     """Set the Qt/Chromium env a packaged window needs, without clobbering a user's."""
     os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", _QTWEBENGINE_DEFAULT_FLAGS)
+
+
+def fit_to_screen(target_w: int, target_h: int, screen_w: int, screen_h: int):
+    """Fit a desired window size to a screen, on each axis: the ideal on a large
+    screen, the screen size when it's smaller — so the window never exceeds the
+    display. Pure + testable.
+
+    ``(1440, 900)`` on a 2560x1440 screen -> ``(1440, 900)``; on a 1366x768 screen
+    -> ``(1366, 768)``.
+    """
+    return min(target_w, screen_w), min(target_h, screen_h)
+
+
+def _screen_size() -> tuple[int, int]:
+    """Best-effort primary screen size in px ``(w, h)``; degrades to the ideal.
+
+    pywebview's ``screens`` is populated as soon as the Qt backend loads (verified
+    before the window is created), so we read it here. On any failure — no backend,
+    headless, or before init — we return the ideal size, so the window still opens
+    at a sane default. Never raises.
+    """
+    try:
+        import webview
+        screens = getattr(webview, "screens", None)
+        if screens:
+            # The largest screen: a big primary should win over a small secondary.
+            sc = max(screens, key=lambda s: int(s.width) * int(s.height))
+            w, h = int(sc.width), int(sc.height)
+            if w > 0 and h > 0:
+                return w, h
+    except Exception:
+        pass
+    return IDEAL_WIDTH, IDEAL_HEIGHT
 
 
 def serve_in_thread(app, host: str, port: int):
@@ -137,21 +173,28 @@ def stop_server(server, thread, on_close: Optional[Callable[[], None]] = None) -
 
 
 def open_native_window(url: str, *, on_close: Optional[Callable[[], None]] = None,
-                       title: str = DEFAULT_TITLE, width: int = DEFAULT_WIDTH,
-                       height: int = DEFAULT_HEIGHT,
+                       title: str = DEFAULT_TITLE, width: int = IDEAL_WIDTH,
+                       height: int = IDEAL_HEIGHT,
                        min_size=tuple(DEFAULT_MIN_SIZE)) -> None:
     """Open the running viewer in its own native window, blocking the main thread.
 
-    Raises :class:`WindowUnavailable` if pywebview or its backend/display is
-    unavailable (the caller then falls back to the browser). ``on_close`` is invoked
-    once when the window closes — hooked on the ``closing`` event *and* after
-    ``start()`` returns, so cleanup runs even if the close kills the loop.
+    The window opens at the *ideal* size (1440x900) on a large screen, or at the
+    screen size when it's smaller (see :func:`fit_to_screen`) — so it never exceeds
+    the display. Raises :class:`WindowUnavailable` if pywebview or its backend/
+    display is unavailable (the caller then falls back to the browser). ``on_close``
+    is invoked once when the window closes — hooked on the ``closing`` event *and*
+    after ``start()`` returns, so cleanup runs even if the close kills the loop.
     """
     _apply_webview_env()
     try:
         import webview
     except Exception as exc:  # pragma: no cover - pywebview is the desktop extra
         raise WindowUnavailable(f"pywebview is not available: {exc}") from exc
+
+    # Open at the ideal size on a large screen, fit to the screen when it's smaller.
+    screen_w, screen_h = _screen_size()
+    width, height = fit_to_screen(width, height, screen_w, screen_h)
+    log.info("window %dx%d (screen %dx%d)", width, height, screen_w, screen_h)
 
     once_close = _once(on_close) if on_close else None
     try:
@@ -171,8 +214,8 @@ def open_native_window(url: str, *, on_close: Optional[Callable[[], None]] = Non
 def launch_window(app, host: str, port: int, *, url: Optional[str] = None,
                   open_browser: bool = True,
                   on_close: Optional[Callable[[], None]] = None,
-                  title: str = DEFAULT_TITLE, width: int = DEFAULT_WIDTH,
-                  height: int = DEFAULT_HEIGHT,
+                  title: str = DEFAULT_TITLE, width: int = IDEAL_WIDTH,
+                  height: int = IDEAL_HEIGHT,
                   min_size=tuple(DEFAULT_MIN_SIZE)) -> int:
     """Open the viewer in its own native window; fall back to the browser as a last resort.
 

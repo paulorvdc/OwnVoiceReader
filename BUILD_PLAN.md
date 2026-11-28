@@ -467,8 +467,11 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
     Verified on this Linux box: the window opened on the display and the **full viewer
     loaded inside it** — `/pdf`, the PDF.js worker, and the `/ws` transcript channel
     were all served, and a `QtWebEngineProcess` child confirms a *real* native window.
-    `transport.js` needed **no change** (it keys off `location.host`). **240 pass**
-    (+6 in `tests/test_window.py`)._
+    `transport.js` needed **no change** (it keys off `location.host`). The window opens
+    at **1440x900** on a large screen and **fits to the screen** when it's smaller
+    (`fit_to_screen`: `min(ideal, screen)` per axis, read from `webview.screens`), so it
+    never exceeds the display. **250 pass**
+    (+11 in `tests/test_window.py`)._
 - [ ] **bundle the voice** — copy `en_US-lessac-medium` into the user voice dir on first run — M6 Phase 2
 - [ ] **PyInstaller** cross-platform binary + per-OS installers (`.exe` / AppImage / `.dmg`) + a CI matrix — M6 Phase 3
 > 📝 comment: A12 (`--auto --no-browser` headless polish) was **scrapped** as a
