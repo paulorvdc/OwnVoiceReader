@@ -104,7 +104,7 @@ jobs:
           ICONSET="build/icon.iconset"
           mkdir -p "$ICONSET"
           for s in 16 32 64 128 256 512; do sips -z "$s" "$s" "$SRC" --out "$ICONSET/icon_${s}x${s}.png"; done
-          iconutil -c iconset "$ICONSET" -o "$OV_ICON"
+          iconutil -c icns "$ICONSET" -o "$OV_ICON"
           echo "built $(du -h "$OV_ICON" | cut -f1) at $OV_ICON"
 
       - name: Build the bundle
