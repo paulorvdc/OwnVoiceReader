@@ -132,6 +132,10 @@ class Config:
     port: int = 6767
     open_browser: bool = True           # --no-browser disables
     local_only: bool = True            # forbid any cloud egress
+    # M6 desktop host: --window opens the viewer in its own native window (the
+    # packaged binary's default). It is a launch *mode*, not a saved setting, so it
+    # stays out of PERSIST_FIELDS (a headless/pip run must not auto-request a window).
+    open_window: bool = False
 
     # --- playback (A9) -------------------------------------------------- #
     playback: str = "browser"          # "browser" (HTML5 <audio>) | "system"
@@ -189,6 +193,8 @@ class Config:
             self.port = a["port"]
         if a.get("no_browser"):
             self.open_browser = False
+        if a.get("window"):
+            self.open_window = True
         if a.get("local_only"):
             self.local_only = True
         if a.get("no_cloud"):

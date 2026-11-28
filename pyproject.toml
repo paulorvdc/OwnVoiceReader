@@ -51,6 +51,14 @@ ocr = ["rapidocr>=3.0", "pytesseract>=0.3"]
 # the default model is `lfm3-vl:2b`. No cloud, no litellm, no httpx.
 vision = ["ollama>=0.6"]
 test = ["pytest>=8"]
+# M6 desktop host: open the viewer in its own native window via pywebview's Qt
+# backend (QtWebEngine) — self-contained, so a packaged binary bundles it cleanly.
+# A packaged build installs `all` + `desktop` (core + vision + ocr + the window).
+desktop = [
+    "pywebview>=6.2",
+    "qtpy>=2.4",
+    "PySide6>=6.6",
+]
 all = [
     "ownvoicereader[server,ocr,vision]",
 ]

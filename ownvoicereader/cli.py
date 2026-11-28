@@ -6,6 +6,7 @@ Usage
     ownvoicereader paper.pdf               # open that PDF in the viewer
     ownvoicereader paper.pdf --auto        # headless read start-to-finish
     ownvoicereader paper.pdf --no-browser  # serve without opening a browser
+    ownvoicereader paper.pdf --window      # open in its own native window (desktop host)
     ownvoicereader --port 8000             # pin a specific port
     ownvoicereader --port 0                # a random free port (not the default)
     ownvoicereader --local-only            # forbid any cloud egress (default)
@@ -35,6 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=None,
                    help="bind port (default 6767; use 0 for a random free port)")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
+    p.add_argument("--window", action="store_true",
+                   help="open the viewer in its own native window (the desktop host; "
+                        "the browser is a last resort if no window can open)")
     p.add_argument("--local-only", action="store_true",
                    help="forbid any cloud egress (this is the default)")
     p.add_argument("--no-cloud", action="store_true", help="alias of --local-only")

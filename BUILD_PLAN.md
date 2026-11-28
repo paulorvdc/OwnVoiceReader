@@ -429,7 +429,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
   - _✅ **C7 done.** One minimalist icon pack — **Phosphor (regular weight)**, vendored **offline** (`viewer/vendor/phosphor/Phosphor.woff2` + a trimmed `phosphor.css` with only the ~18 glyphs used; follows the existing pdfjs-vendoring pattern, no CDN/network). Every control now uses the same family: the **header** (☰ settings, the 📄↔📖 cycler, and the theme toggle — sun / moon / palette), the **footer** (page-nav, zoom, and the reading transport, all **uniform square `.icon-btn`s**), and the **settings** (⟳ refresh + 💾 save glyphs). The **PDF opens fit-to-width by default** (was a fixed 110%); the "Fit" button + `f` key re-fit. Buttons that sit next to each other are now **uniform**, and the **local-only toggle moved *into* the vision group** with a full-contrast label so it matches that block's style. The dynamic icons (theme, the PDF/reading cycler, play/pause) swap via a small `innerHTML` helper, and two status strings that used a literal ▶ glyph were de-staled to words. Viewer-only — no new tests; full suite still **206**._
 > 📝 comment:
 
-### M6 — Packaging (later, post-v1)  _status: [~] hardening done (2/2) · binary next_
+### M6 — Packaging (later, post-v1)  _status: [~] hardening + window host done · binary next_
 > **Hardening first, then the binary.** The old *Hardening* milestone was folded
 > here: its pending items lead the packaging work. The two already-decided items are
 > not carried as tasks — graceful LLM-down / TTS-down degradation already shipped with
@@ -455,8 +455,22 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
     flows, each extra's install + system deps + env vars, the config layering, and a
     troubleshooting table. Written **ReadTheDocs-ready** (the user plans an RTD page
     later; this file slots in as the quick-start page)._
-- [ ] **PyInstaller / Briefcase** cross-platform binary (`.exe` / AppImage / `.dmg`)
-- [ ] final UI should open on its own window but keep mostly web usage (similar to discord)
+- [x] **own native window** — final UI opens on its own window but keeps mostly-web usage (Discord-like) — M6 Phase 1
+  - _✅ **Phase 1 done (window host).** `ownvoicereader/server/window.py` runs uvicorn in a
+    **background thread** and shows the running viewer in its **own native window** via
+    **pywebview's Qt backend** (QtWebEngine — self-contained, so a binary bundles it
+    cleanly; no per-OS system libs to chase like WebKitGTK). A `--window` flag /
+    `config.open_window` (default **off** for the pip path; the packaged binary forces
+    it). The window's **close** drives shutdown + the temp-dir cleanup (atexit is
+    unreliable when a close kills the process on some platforms). The browser is a
+    **loud last resort** — only if no window can open — *not* the normal path.
+    Verified on this Linux box: the window opened on the display and the **full viewer
+    loaded inside it** — `/pdf`, the PDF.js worker, and the `/ws` transcript channel
+    were all served, and a `QtWebEngineProcess` child confirms a *real* native window.
+    `transport.js` needed **no change** (it keys off `location.host`). **240 pass**
+    (+6 in `tests/test_window.py`)._
+- [ ] **bundle the voice** — copy `en_US-lessac-medium` into the user voice dir on first run — M6 Phase 2
+- [ ] **PyInstaller** cross-platform binary + per-OS installers (`.exe` / AppImage / `.dmg`) + a CI matrix — M6 Phase 3
 > 📝 comment: A12 (`--auto --no-browser` headless polish) was **scrapped** as a
 > planning item — the existing `--auto` / `_run_headless` code + its tests stay;
 > the headless path remains functional, it's just no longer an M6 task.

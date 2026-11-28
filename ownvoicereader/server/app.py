@@ -231,17 +231,26 @@ def _ensure_free_port(host: str, port: int) -> int:
     return free
 
 
-def start(config: Config) -> int:
+def start(config: Config, ui: Optional[str] = None) -> int:
     """Entry point used by the CLI.
 
     * ``--auto`` reads the PDF to completion headlessly (A12) and returns.
-    * otherwise it serves the browser viewer on 127.0.0.1:<port>.
+    * ``ui="window"`` (or ``--window`` / ``config.open_window``) opens the viewer in
+      its **own native window** (the desktop host, M6); the browser is a loud last
+      resort if no window can open.
+    * otherwise it serves the browser viewer on 127.0.0.1:<port> and, by default,
+      opens it in the browser.
     """
     import atexit
     import shutil
 
     if config.auto:
         return _run_headless(config)
+
+    # ``ui`` is normally None -> derive from config; a caller (e.g. the packaged
+    # binary's entry point) can pass "window" to force the native window.
+    if ui is None:
+        ui = "window" if getattr(config, "open_window", False) else "browser"
 
     host = config.host
     # 0 (or an unset port) means "pick a free high port"; a concrete port is
@@ -269,6 +278,18 @@ def start(config: Config) -> int:
 
     url = f"http://{host}:{port}/"
     _print_banner(state, url)
+
+    if ui == "window":
+        # The desktop host: the viewer opens in its own native window; the browser is
+        # a loud last resort if the window can't open. on_close runs the temp-dir
+        # cleanup on window close (atexit is unreliable when a window close kills the
+        # process on some platforms), and also serves as the belt-and-suspenders on
+        # a normal exit.
+        from .window import launch_window
+        return launch_window(
+            app, host, port, url=url,
+            open_browser=config.open_browser, on_close=_cleanup,
+        )
 
     if config.open_browser:
         _open_when_ready(url)
