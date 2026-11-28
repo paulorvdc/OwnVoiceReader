@@ -105,6 +105,21 @@ You can install one or several at once, e.g. `pip install -e ".[vision,ocr]"`.
 The vendored PDF.js build ships in `ownvoicereader/viewer/vendor/pdfjs/`, so the
 app works **offline / local-only with no network at runtime**. Nothing to do.
 
+### 2.4 (Optional) Desktop app — the native installers (M6)
+
+A **single, self-contained, offline** package per OS ships on the **GitHub
+Releases** page (no Python, no setup — it opens the viewer in its own window):
+`OwnVoiceReader-x86_64.AppImage` (plus `ownvoicereader_0.1.0_amd64.deb`, the
+one-click **Ubuntu/Debian** installer) on **Linux**, `OwnVoiceReader-Setup-x86_64.exe`
+on **Windows**, and `OwnVoiceReader-arm64.dmg` on **macOS (Apple Silicon only)**.
+
+> **Got an Intel Mac?** The macOS `.dmg` is arm64 and won't run on Intel. Use the
+> **command-line version** instead — it works on any architecture:
+> `pip install "ownvoicereader[server,ocr,vision]"`, then
+> `ownvoicereader paper.pdf` (opens the browser) or
+> `ownvoicereader paper.pdf --no-browser` (headless). You lose only the native
+> window — the voice, OCR, and vision are identical. See the README's *Desktop app*.
+
 ---
 
 ## 3. Run it

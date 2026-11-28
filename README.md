@@ -87,9 +87,11 @@ What's **not here yet** (later milestones, see `BUILD_PLAN.md`):
   default, a dark high-contrast option, and a Dracula theme), a lyrics-style
   now-reading / transcript, and the markdown of the table/figure being explained
   shown alongside.
-- 🔜 **M6** packaging (post-v1): **hardening first** (error handling + more tests, a
-  guided install for the core + optional extras), then a cross-platform binary
-  (`.exe` / AppImage / `.dmg`) that opens its own window while keeping the web app.
+- ✅ **M6** packaging: a cross-platform desktop binary — a **single, self-contained,
+  offline** package per OS (**AppImage** + a native **`.deb`** on Linux, a real
+  **`.dmg`** on macOS, an **`.exe`** on Windows) that opens the viewer in its **own
+  native window** while keeping the web app. The macOS `.dmg` is **Apple Silicon
+  only** (Intel Macs use the command-line version — see *Desktop app (M6)*).
 
 > **Voice engine:** M1 uses **Piper** as the local voice
 > (`en_US-lessac-medium`, 22050 Hz). espeak-ng was the plan's first choice but
@@ -274,6 +276,48 @@ local_only: true
 > new paper. The **⟳ Refresh models** button re-probes the (possibly new) host *now*,
 > repopulating the model picker + badge without a page reload. Voice + style switch
 > instantly mid-read.
+
+---
+
+## Desktop app (M6) — the native installers
+
+A **cross-platform desktop binary** ships on the **GitHub Releases** page (built by
+`.github/workflows/build.yml`, one per OS). Each is a **single, self-contained,
+offline** package — no Python, no setup: the whole app (core + vision + ocr + the
+windowed host + a bundled voice) is inside, and it re-runs *itself* for the Piper
+TTS subprocess, so there is one executable, not a folder. The app opens the viewer
+in **its own native window**; the browser is a *loud* last resort for the rare case
+no window can open.
+
+| OS | Package | Install |
+|---|---|---|
+| **Linux** | `OwnVoiceReader-x86_64.AppImage` — run it anywhere, no install | `chmod +x …` then run / double-click |
+| **Linux — Ubuntu/Debian** | `ownvoicereader_0.1.0_amd64.deb` — the native one-click installer | double-click → *Ubuntu Software* / *GDebi* |
+| **macOS — Apple Silicon** | `OwnVoiceReader-arm64.dmg` — a real `.app` | double-click → drag to *Applications* |
+| **Windows** | `OwnVoiceReader-Setup-x86_64.exe` — the Inno Setup installer | double-click → wizard |
+
+The **`.deb`** is the true one-click on **Ubuntu/Debian**: it installs the app and
+adds a menu entry + a PDF association. The **AppImage** is the run-anywhere fallback
+on other Linux distros — it needs **FUSE** (present on modern distros); if it won't
+launch, mark it executable with `chmod +x OwnVoiceReader-x86_64.AppImage` or run it
+with `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+> ### ⚠️ macOS is Apple Silicon (arm64) only
+>
+> The macOS `.dmg` is an **arm64** `.app`; it runs on **M-series** (Apple Silicon)
+> Macs and will **not** run on an **Intel** Mac (the binary has no x86_64 slice).
+>
+> **Got an Intel Mac? Use the command-line version — it works on any architecture:**
+>
+> ```bash
+> pip install "ownvoicereader[server,ocr,vision]"   # the app + the extras
+> ownvoicereader path/to/paper.pdf                   # opens the viewer in your browser
+> ownvoicereader path/to/paper.pdf --no-browser      # headless, no browser
+> ```
+>
+> On an Intel Mac the viewer runs in your **browser** (the app's last-resort path);
+> you lose only the *native window*. Everything else — the local Piper voice, OCR,
+> optional vision, local-only — is identical.
 
 ---
 

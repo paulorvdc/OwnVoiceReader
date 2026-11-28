@@ -9,6 +9,7 @@ from .tts_engine import (
     build_tts_engine,
     locate_voice_dir,
     locate_piper_binary,
+    PIPER_SENTINEL,
     ensure_default_voice,
     DEFAULT_VOICE,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "build_tts_engine",
     "locate_voice_dir",
     "locate_piper_binary",
+    "PIPER_SENTINEL",
     "ensure_default_voice",
     "DEFAULT_VOICE",
     "Player",

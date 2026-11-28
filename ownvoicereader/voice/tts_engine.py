@@ -44,6 +44,15 @@ DEFAULT_VOICE_DIR = Path.home() / ".cache" / "ownvoicereader" / "voices"
 # Default voice model (a clear, natural English voice; ~60 MB, downloaded once).
 DEFAULT_VOICE = "en_US-lessac-medium"
 
+# The sentinel that turns the *frozen* main binary into a Piper TTS subprocess.
+# The release build ships ONE native executable (no sibling piper exe): when the app
+# needs speech it re-runs itself as  <binary> --__ov_piper --model ... < text  and the
+# entry dispatches that invocation to Piper's own CLI (see packaging/ownvoicereader_entry.py).
+# This is what lets the same single binary be a real .app on macOS (a bundle holds one
+# executable), an AppImage on Linux, and an .exe on Windows. Stripped before Piper's
+# argparse sees it, so it never collides with Piper's own flags.
+PIPER_SENTINEL = "--__ov_piper"
+
 
 # --------------------------------------------------------------------------- #
 # Audio helpers
@@ -103,10 +112,15 @@ class PiperEngine(TtsEngine):
 
     name = "piper"
 
-    def __init__(self, binary: str, voice_dir: Path, voice: Optional[str] = None):
+    def __init__(self, binary: str, voice_dir: Path, voice: Optional[str] = None,
+                 self_mode: bool = False):
         self.binary = binary
         self.voice_dir = Path(voice_dir)
         self._voice = voice or DEFAULT_VOICE
+        # In a frozen, self-contained build the "piper binary" IS the app binary, which
+        # we re-run in Piper mode via PIPER_SENTINEL (no sibling exe ships). A system or
+        # PATH piper is a real external binary and needs no sentinel.
+        self.self_mode = self_mode
         self.sample_rate = self._read_sample_rate() or 22050
 
     @property
@@ -149,8 +163,12 @@ class PiperEngine(TtsEngine):
         model = self._model_path()
         if not model:
             raise TtsUnavailable(f"no voice model found in {self.voice_dir}")
-        cmd = [
-            self.binary,
+        cmd = [self.binary]
+        # Frozen self-contained build: this binary is the app, not a piper exe, so
+        # hand it the sentinel that the entry uses to dispatch to Piper's CLI.
+        if self.self_mode:
+            cmd.append(PIPER_SENTINEL)
+        cmd += [
             "--model", str(model),
             "--data-dir", str(self.voice_dir),
             "--output-raw",
@@ -234,17 +252,29 @@ def _bin_exists(path: str) -> bool:
 
 
 def locate_piper_binary() -> Optional[str]:
-    """Find the ``piper`` executable (env override, PATH, then the env bin dir)."""
+    """Find the ``piper`` TTS binary (env override, PATH, the env bin dir, or self).
+
+    Resolution order:
+      1. ``OWNVOICEREADER_PIPER_BIN`` — an explicit override (a real, external piper).
+      2. ``piper`` on ``PATH`` — a system / pip-installed piper.
+      3. ``<interp>/piper`` — the ``piper`` console script next to the running
+         interpreter (a pip/conda dev install; non-frozen only).
+      4. **frozen**: the app binary *is* Piper — it re-runs itself in Piper mode via
+         :data:`PIPER_SENTINEL`, so a self-contained build ships no sibling exe.
+    """
     env_bin = os.environ.get("OWNVOICEREADER_PIPER_BIN")
     if env_bin and _bin_exists(env_bin):
         return env_bin
     found = shutil.which("piper")
     if found:
         return found
-    # The console script lives next to the interpreter running the app.
+    # Non-frozen dev install: the piper-tts console script sits next to the interpreter.
     cand = Path(sys.executable).parent / "piper"
     if _bin_exists(str(cand)):
         return str(cand)
+    # Frozen, self-contained build: the main binary is Piper (runs itself in piper mode).
+    if getattr(sys, "frozen", False):
+        return sys.executable
     return None
 
 
@@ -324,10 +354,16 @@ def build_tts_engine(config=None, voice: Optional[str] = None,
 
     piper_bin = locate_piper_binary()
     if piper_bin:
-        engine = PiperEngine(piper_bin, vdir, voice=vname)
+        # A frozen, self-contained build re-runs its own binary in Piper mode, so the
+        # located binary *is* the app and needs the sentinel. An external piper (env or
+        # PATH) is a real binary and does not.
+        self_mode = bool(getattr(sys, "frozen", False)) and \
+            os.path.realpath(piper_bin) == os.path.realpath(sys.executable)
+        engine = PiperEngine(piper_bin, vdir, voice=vname, self_mode=self_mode)
         if engine.available:
-            log.info("TTS: using Piper (%s, model=%s)", engine.name,
-                     engine._model_path().name)
+            log.info("TTS: using Piper (%s, model=%s%s)", engine.name,
+                     engine._model_path().name,
+                     ", self-exec" if self_mode else "")
             return engine
 
     espeak = shutil.which("espeak-ng") or os.environ.get("OWNVOICEREADER_ESPEAK_BIN")

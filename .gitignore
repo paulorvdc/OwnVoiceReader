@@ -248,4 +248,7 @@ OwnVoiceReader-*.exe
 OwnVoiceReader-*.msi
 OwnVoiceReader-*.zip
 OwnVoiceReader-*.tar.gz
+# the native .deb (Ubuntu/Debian one-click) — lowercase + underscore, so the
+# OwnVoiceReader-* patterns above don't catch it; guard it explicitly.
+*.deb
 squashfs-root/

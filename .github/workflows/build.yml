@@ -1,16 +1,24 @@
 # .github/workflows/build.yml — the M6 packaging pipeline.
 #
-# Builds the cross-platform desktop binary (core + vision + ocr + the windowed
-# host + the bundled Piper voice + the bundled Piper TTS subprocess) and ships,
-# per OS, BOTH a native installer AND a compressed zip (the smaller, portable,
-# no-install download). Binaries land ONLY here on the GitHub Release page — git
-# stays lean: the 63 MB voice travels via Git LFS, and no build output is ever
-# committed (see .gitignore).
+# Builds the cross-platform desktop binary (core + vision + ocr + the windowed host +
+# the bundled Piper voice) and ships, per OS, ONE native package (a single file, no
+# folder for the user to handle):
+#   * Linux  -> OwnVoiceReader-x86_64.AppImage  (run it anywhere, no install) AND
+#               ownvoicereader_0.1.0_amd64.deb   (the native one-click Ubuntu/Debian
+#                                               installer: double-click -> install)
+#   * macOS  -> OwnVoiceReader-<arch>.dmg        (a .app + /Applications, drag-to-install)
+#   * Windows-> OwnVoiceReader-Setup-x86_64.exe  (a single Inno Setup installer)
+#
+# The binary is a single self-contained executable (no folder the user handles): the
+# app re-runs itself in a Piper mode for TTS, so there is no sibling piper exe, and the
+# macOS bundle is a real .app. Binaries land ONLY here on the GitHub Release page — git
+# stays lean: the 63 MB voice travels via Git LFS, and no build output is ever committed
+# (see .gitignore).
 #
 # Triggers:
 #   * push of a v* tag  -> build every OS + publish a release.
-#   * workflow_dispatch  -> build every OS + upload artifacts (downloadable from the
-#                           run page) WITHOUT publishing (manual / pipeline check).
+#   * workflow_dispatch  -> build every OS + upload artifacts (downloadable from the run
+#                           page) WITHOUT publishing (a manual / pipeline check).
 #
 # Python 3.12 is the conservative choice for third-party wheel availability
 # (piper-tts / rapidocr); the local dev env is 3.13 — bump PYTHON_VERSION to align
@@ -27,12 +35,6 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.12"
-  # Release build flags (the spec reads these at build time):
-  #   OV_BUNDLE_PIPER=1 -> bundle the piper TTS subprocess (self-contained, offline)
-  #   OV_CONSOLE=0      -> a silent GUI build (the release default; OV_CONSOLE=1 is
-  #                        the debuggable console twin for --auto / local dev)
-  OV_BUNDLE_PIPER: "1"
-  OV_CONSOLE: "0"
 
 jobs:
   # --------------------------------------------------------------------------
@@ -59,8 +61,8 @@ jobs:
         run: python -m pytest
 
   # --------------------------------------------------------------------------
-  # 2) The cross-platform build — one job per OS. Each produces the native
-  #    installer + a zip, then uploads both as an artifact.
+  # 2) The cross-platform build — one job per OS. Each produces the single native
+  #    package, smokes the bundled TTS, then uploads it as an artifact.
   # --------------------------------------------------------------------------
   build:
     needs: test
@@ -69,11 +71,19 @@ jobs:
       fail-fast: false   # one OS failing shouldn't cancel the others
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # Release build flags (the spec reads these at build time):
+      #   OV_CONSOLE=0 -> a silent GUI build (the release default; OV_CONSOLE=1 is the
+      #                   debuggable console twin for --auto / local dev)
+      #   OV_ICON      -> the .icns for the macOS .app (generated below; ignored off-mac)
+      OV_CONSOLE: "0"
+      OV_ICON: "ownvoicereader/viewer/imgs/ownvoicereader.icns"
     steps:
       - name: Checkout (with the LFS voice)
         uses: actions/checkout@v4
         with:
           lfs: true
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -84,45 +94,79 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[server,ocr,vision,desktop]" pyinstaller
 
-      - name: Build the one-dir bundle
+      - name: Make the .icns (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        # A real .app wants a .icns; build a multi-size iconset from the 256 PNG and
+        # let PyInstaller embed it. The path matches OV_ICON; off-mac this is a no-op
+        # (the .icns check in the spec falls back to the PNG).
+        run: |
+          SRC="ownvoicereader/viewer/imgs/ownvoicereader-icon-256.png"
+          ICONSET="build/icon.iconset"
+          mkdir -p "$ICONSET"
+          for s in 16 32 64 128 256 512; do sips -z "$s" "$s" "$SRC" --out "$ICONSET/icon_${s}x${s}.png"; done
+          iconutil -c iconset "$ICONSET" -o "$OV_ICON"
+          echo "built $(du -h "$OV_ICON" | cut -f1) at $OV_ICON"
+
+      - name: Build the bundle
+        # macOS -> a real .app (BUNDLE); Linux/Windows -> a one-dir (COLLECT). The spec
+        # branches on the platform; the same command drives both.
         run: pyinstaller --noconfirm --clean packaging/ownvoicereader.spec
 
       - name: Smoke — the bundled Piper synthesizes audio
-        # Proves the self-contained TTS path end-to-end (the core value), on every OS.
+        # Proves the self-contained TTS path end-to-end (the core value), on every OS,
+        # by running the single binary in its Piper mode (smoke_tts.py finds the
+        # per-platform executable and feeds it the PIPER_SENTINEL).
         run: python packaging/smoke_tts.py
 
       - name: Report bundle size
         # Shell-agnostic (works on Linux/macOS/Windows): a single Python one-liner,
         # no `du`/`||` (those don't exist in PowerShell).
-        run: python -c "from pathlib import Path; s=sum(f.stat().st_size for f in Path('dist/OwnVoiceReader').rglob('*') if f.is_file()); print('onedir', round(s/1e9,2), 'GB,', len(list(Path('dist/OwnVoiceReader').rglob('*'))), 'entries')"
+        run: |
+          python -c "
+          import pathlib
+          root = pathlib.Path('dist')
+          total = sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and p.stat().st_size)
+          n = sum(1 for p in root.rglob('*') if p.is_file())
+          print(f'bundle: {n} files, {total/1e9:.2f} GB under dist/')
+          "
 
-      # --- native installer (one per OS) + the portable zip --------------------
-      - name: Package — AppImage + zip (Linux)
+      # --- the single native package per OS -----------------------------------
+      # Linux ships BOTH: the AppImage (run it anywhere, no install) and a .deb
+      # (the native one-click installer for Ubuntu/Debian: double-click -> install).
+      - name: Package — AppImage + .deb (Linux)
         if: ${{ runner.os == 'Linux' }}
         shell: bash
         run: |
           bash packaging/make_appimage.sh
-          ( cd dist && zip -9 -r OwnVoiceReader-Linux.zip OwnVoiceReader )
+          bash packaging/make_deb.sh
 
-      - name: Package — .dmg + zip (macOS)
+      - name: Package — .dmg of the .app (macOS)
         if: ${{ runner.os == 'macOS' }}
         shell: bash
-        run: |
-          bash packaging/make_dmg.sh
-          ( cd dist && zip -9 -r OwnVoiceReader-macOS.zip OwnVoiceReader )
+        run: bash packaging/make_dmg.sh
 
-      - name: Package — Inno Setup installer + zip (Windows)
+      - name: Package — Inno Setup installer (Windows)
         if: ${{ runner.os == 'Windows' }}
         shell: pwsh
+        # The `&` (PowerShell call operator) at a scalar start is a YAML anchor, so use
+        # a literal block scalar to keep it literal.
         run: |
           & ./packaging/make_installer.ps1
-          Compress-Archive -Path dist/OwnVoiceReader -DestinationPath dist/OwnVoiceReader-Windows.zip
 
-      - name: Upload artifacts
+      - name: Upload the native package
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ runner.os }}
-          path: dist/OwnVoiceReader-*
+          # One native package per OS; each runner produces only its own, so ignore the
+          # paths that don't exist on this runner (the packaging step above guarantees
+          # the matching one was produced, or it would have failed the job).
+          name: package-${{ runner.os }}
+          if-no-files-found: ignore
+          # Each OS produces exactly one native package; the others are skipped.
+          path: |
+            dist/OwnVoiceReader-x86_64.AppImage
+            dist/ownvoicereader_0.1.0_amd64.deb
+            dist/OwnVoiceReader-arm64.dmg
+            dist/OwnVoiceReader-Setup-x86_64.exe
 
   # --------------------------------------------------------------------------
   # 3) Publish to the GitHub Release page — only on a v* tag (manual dispatch
@@ -136,15 +180,15 @@ jobs:
     permissions:
       contents: write   # create/update the release
     steps:
-      - name: Download all platform artifacts
+      - name: Download all platform packages
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
-          pattern: artifacts-*
+          path: packages
+          pattern: package-*
           merge-multiple: true
       - name: Publish to the GitHub Release page
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*
+          files: packages/*
           generate_release_notes: true
           draft: false

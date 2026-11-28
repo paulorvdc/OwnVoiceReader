@@ -1,24 +1,35 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for OwnVoiceReader — a cross-platform desktop binary.
+"""PyInstaller spec for OwnVoiceReader — the cross-platform desktop binary.
 
-Builds a **one-dir** bundle (NOT one-file: one-file extracts to a temp dir on every
-launch, which is slow and trips antivirus). The bundle ships:
-  * the **windowed** entry (ownvoicereader_entry.py) — opens the viewer in its own
-    native window and forces --window (the browser is a *loud* last resort only);
-  * the **piper** TTS subprocess (piper_entry.py) — so the binary is self-contained
-    and offline; ``locate_piper_binary()`` finds it at ``sys.executable.parent/piper``;
+The deliverable is **one native executable per platform** (no folder the user handles):
+  * macOS  -> a real ``.app`` bundle (PyInstaller ``BUNDLE``): drag-to-install, a
+    single app in Launchpad, an icon.
+  * Linux  -> a one-dir bundle wrapped in an **AppImage** (a single runnable file).
+  * Windows-> a one-dir bundle wrapped in an **Inno Setup .exe** (a single installer).
+
+The binary is **self-contained and offline**. It ships a single executable that has
+two modes, selected by a sentinel in ``argv`` (see ``ownvoicereader_entry.py``):
+  * **GUI mode** (default): opens the viewer in its own native window and forces
+    ``--window`` (the browser is a *loud* last resort only, inside ``launch_window``).
+  * **Piper mode** (``--__ov_piper``): when the app needs speech it re-runs *itself*
+    in Piper mode, so there is **no sibling piper exe** — the one binary doubles as
+    the TTS subprocess. That is what lets macOS hold a single executable in the .app.
+
+The bundle also carries:
   * the **viewer** assets (index.html, transport.js, vendored PDF.js + Phosphor, the
     branding imgs) and the **bundled voice** (en_US-lessac-medium), copied into the
     user cache on first run;
   * **core + vision + ocr** — the C-extension deps are collect_all'd so the native
     libs + in-package models ship.
 
-Console is controllable via the ``OV_CONSOLE`` env var: 1 = a console window (for
---auto/debug, the default for local builds), 0 = a silent GUI build (the release
-default). Build with:  pyinstaller packaging/ownvoicereader.spec
+The console is controllable via ``OV_CONSOLE`` (1 = a console window for
+``--auto``/debug; 0 = a silent GUI build — the release default). The output is a
+``.app`` on macOS, a one-dir on Linux/Windows. Build with:
+  pyinstaller packaging/ownvoicereader.spec
 """
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
@@ -27,11 +38,16 @@ REPO = os.path.dirname(os.path.abspath(SPECPATH))
 VIEWER = os.path.join(REPO, "ownvoicereader", "viewer")
 VOICE = os.path.join(REPO, "ownvoicereader", "voice", "models")
 
+IS_DARWIN = sys.platform == "darwin"
+APP_VERSION = "0.1.0"
+
 # console=1 (debuggable) for local builds; the release GUI build sets OV_CONSOLE=0.
 CONSOLE = os.environ.get("OV_CONSOLE", "1") == "1"
 
 # The C-extension / heavy deps that PyInstaller's static analysis can't see fully —
-# their native libs + in-package models must be collected wholesale.
+# their native libs + in-package models must be collected wholesale. "piper" is
+# here because the single binary runs Piper's own CLI in its Piper mode (self-exec),
+# so Piper + onnxruntime must be inside this one executable.
 HEAVY = [
     "pymupdf", "pydantic_core", "yaml", "uvicorn",
     "rapidocr", "onnxruntime", "cv2", "numpy",
@@ -124,29 +140,37 @@ APP_DATAS = [
 ]
 
 MAIN_ENTRY = os.path.join(SPECPATH, "ownvoicereader_entry.py")
-PIPER_ENTRY = os.path.join(SPECPATH, "piper_entry.py")
 
-# A GUI icon (Linux/macOS take the PNG; the Windows build swaps in an .ico).
-ICON = os.path.join(VIEWER, "imgs", "ownvoicereader-icon-256.png")
-ICON = ICON if os.path.isfile(ICON) else None
+# --- icon --------------------------------------------------------------------
+# macOS wants a .icns (the CI mac step generates one from the 256 PNG via sips +
+# iconutil and passes it via OV_ICON; a missing .icns never breaks the build — we
+# fall back to PyInstaller's default). Linux/Windows take the PNG.
+ICON = os.environ.get("OV_ICON")
+if not ICON or not os.path.isfile(ICON):
+    if IS_DARWIN:
+        _icns = os.path.join(VIEWER, "imgs", "ownvoicereader.icns")
+        ICON = _icns if os.path.isfile(_icns) else None
+    else:
+        _png = os.path.join(VIEWER, "imgs", "ownvoicereader-icon-256.png")
+        ICON = _png if os.path.isfile(_png) else None
 
-# --- main app ----------------------------------------------------------------
-# A one-dir build: each EXE gets exclude_binaries=True + an empty binaries/datas
-# list, and COLLECT gathers the shared binaries/datas (passing them to the EXE too
-# is what triggers the "Resource ... is not a valid file" collision).
+# --- the single executable ----------------------------------------------------
+# One Analysis, one EXE. The piper TTS subprocess is a *mode* of this binary (it
+# re-runs itself with the PIPER_SENTINEL), not a second Analysis — so there is no
+# sibling exe to place, and the .app holds exactly one executable.
 a = Analysis(
     [MAIN_ENTRY],
     pathex=[REPO],
     binaries=all_binaries,
     datas=all_datas + APP_DATAS,
-    hiddenimports=all_hidden + APP_MODULES,
+    hiddenimports=all_hidden + APP_MODULES + ["piper", "piper.__main__", "onnxruntime"],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
-exe_main = EXE(
+exe = EXE(
     pyz,
     a.scripts,
     [],
@@ -159,63 +183,52 @@ exe_main = EXE(
     icon=ICON,
 )
 
-# --- bundled piper TTS subprocess --------------------------------------------
-# A *separate* Analysis (its own PYZ + EXE) so its entry runs its own script. The
-# two-exes-from-one-analysis pattern mis-assigns entries under PyInstaller 6, so the
-# piper exe ran the main app. Separate analyses avoid that. Gated behind
-# OV_BUNDLE_PIPER so a main-only build (system piper via PATH) can be validated
-# faster; the release build sets it to 1 (default) for a self-contained binary.
-extra_exes = []
-if os.environ.get("OV_BUNDLE_PIPER", "1") == "1":
-    ap = Analysis(
-        [PIPER_ENTRY],
-        pathex=[REPO],
-        binaries=all_binaries,
-        datas=all_datas,
-        hiddenimports=all_hidden + ["piper", "piper.__main__", "onnxruntime"],
-        hookspath=[],
-        runtime_hooks=[],
-        excludes=[],
-        noarchive=False,
+# --- platform output: a real .app on macOS, a one-dir on Linux/Windows --------
+if IS_DARWIN:
+    # A real .app bundle: the macOS-native single app (drag-to-install, Launchpad,
+    # icon). BUNDLE is a no-op off-darwin, so this is safe to keep in the spec.
+    info_plist = {
+        "CFBundleName": "OwnVoiceReader",
+        "CFBundleDisplayName": "OwnVoiceReader",
+        "CFBundleShortVersionString": APP_VERSION,
+        "CFBundleVersion": APP_VERSION,
+        "NSHighResolutionCapable": True,
+        "LSMinimumSystemVersion": "10.13",
+        "LSApplicationCategoryType": "public.app-category.education",
+    }
+    BUNDLE(
+        exe,
+        a.binaries,
+        a.datas,
+        name="OwnVoiceReader",
+        bundle_identifier="com.paulorvdc.ownvoicereader",
+        icon=ICON,
+        version=APP_VERSION,
+        info_plist=info_plist,
     )
-    pyzp = PYZ(ap.pure)
-    exe_piper = EXE(
-        pyzp,
-        ap.scripts,
-        [],
-        exclude_binaries=True,
-        name="piper",
-        debug=False,
+    OUTPUT_ROOT = os.path.join(DISTPATH, "OwnVoiceReader.app")
+else:
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        name="OwnVoiceReader",
         strip=False,
         upx=False,
-        console=True,
+        contents_directory=".",
     )
-    extra_exes = [exe_piper]
-
-# One-dir: the main exe (+ optional piper) + the shared binaries/datas.
-coll = COLLECT(
-    exe_main,
-    *extra_exes,
-    a.binaries,
-    a.datas,
-    name="OwnVoiceReader",
-    strip=False,
-    upx=False,
-    contents_directory=".",
-)
+    OUTPUT_ROOT = os.path.join(DISTPATH, "OwnVoiceReader")
 
 # --- trim Qt data the built-in PySide6 hook pulled in but a Widgets webview never
 # --- loads. These come from PyInstaller's PySide6 hook (not collect_all), so they're
-# --- removed post-COLLECT from the onedir (a glob finds them regardless of the
-# --- PyInstaller onedir layout — _internal/ in 6.x).
+# --- removed post-build from the output. A glob finds them regardless of the layout
+# --- (a .app's Contents/Resources/_internal on macOS, or the onedir on Linux/Windows).
 import shutil as _shutil
 import glob as _glob
 
-_onedir = os.path.join(DISTPATH, "OwnVoiceReader")
-
 # Qt/qml: a Qt*Widgets* webview (QtWebEngineWidgets, what pywebview's Qt backend
 # uses) never loads the QML/Quick data — confirmed: the window renders without it.
-for _qt in _glob.glob(os.path.join(_onedir, "**", "PySide6", "Qt", "qml"), recursive=True):
+for _qt in _glob.glob(os.path.join(OUTPUT_ROOT, "**", "PySide6", "Qt", "qml"), recursive=True):
     if os.path.isdir(_qt):
         _mb = sum(os.path.getsize(os.path.join(r, f))
                   for r, _d, fs in os.walk(_qt) for f in fs) / 1e6
@@ -225,7 +238,7 @@ for _qt in _glob.glob(os.path.join(_onedir, "**", "PySide6", "Qt", "qml"), recur
 # Qt/translations: trim the Qt UI *.qm files but KEEP qtwebengine_locales/ —
 # Chromium's locale .pak files, which QtWebEngine loads at start (dropping it makes
 # the webview log a benign "could not find translation file for en-US.pak" warning).
-for _tr in _glob.glob(os.path.join(_onedir, "**", "PySide6", "Qt", "translations"), recursive=True):
+for _tr in _glob.glob(os.path.join(OUTPUT_ROOT, "**", "PySide6", "Qt", "translations"), recursive=True):
     _removed = 0
     for _qm in _glob.glob(os.path.join(_tr, "*.qm")):
         try:
@@ -235,3 +248,5 @@ for _tr in _glob.glob(os.path.join(_onedir, "**", "PySide6", "Qt", "translations
             pass
     if _removed:
         print(f"trimmed {_removed} Qt UI .qm files from PySide6/Qt/translations")
+
+print(f"output: {OUTPUT_ROOT}")

@@ -429,7 +429,7 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
   - _✅ **C7 done.** One minimalist icon pack — **Phosphor (regular weight)**, vendored **offline** (`viewer/vendor/phosphor/Phosphor.woff2` + a trimmed `phosphor.css` with only the ~18 glyphs used; follows the existing pdfjs-vendoring pattern, no CDN/network). Every control now uses the same family: the **header** (☰ settings, the 📄↔📖 cycler, and the theme toggle — sun / moon / palette), the **footer** (page-nav, zoom, and the reading transport, all **uniform square `.icon-btn`s**), and the **settings** (⟳ refresh + 💾 save glyphs). The **PDF opens fit-to-width by default** (was a fixed 110%); the "Fit" button + `f` key re-fit. Buttons that sit next to each other are now **uniform**, and the **local-only toggle moved *into* the vision group** with a full-contrast label so it matches that block's style. The dynamic icons (theme, the PDF/reading cycler, play/pause) swap via a small `innerHTML` helper, and two status strings that used a literal ▶ glyph were de-staled to words. Viewer-only — no new tests; full suite still **206**._
 > 📝 comment:
 
-### M6 — Packaging (later, post-v1)  _status: [~] hardening + window host + voice done · binary next_
+### M6 — Packaging (later, post-v1)  _status: [~] hardening + window host + voice + installers/CI done · first runner run pending_
 > **Hardening first, then the binary.** The old *Hardening* milestone was folded
 > here: its pending items lead the packaging work. The two already-decided items are
 > not carried as tasks — graceful LLM-down / TTS-down degradation already shipped with
@@ -486,12 +486,33 @@ and **`📝 comment:`** lines for your input. **Do not start coding until Sectio
     pointer materializes back to the real 63 MB with a matching sha256).
     `OWNVOICEREADER_VOICE_DIR` still overrides the target. **+5 tests** in
     `tests/test_voice.py` (all hermetic, temp-dir), full suite **250 pass**._
-- [ ] **per-OS installers + a CI matrix** — PyInstaller onedir, each OS built on its own runner — M6 Phase 3
-  - _Distribution model (decided): the **binaries never touch git** — each OS
-    runner (ubuntu / macOS / windows) builds its installer and attaches it to the
-    **GitHub Release page** via `.github/workflows/build.yml`. The 63 MB voice
-    travels via **Git LFS** (CI does `git lfs pull`). So git stays lean, all
-    three installers land on the Release, and no cross-compile._
+- [x] **per-OS native installers + a CI matrix** — M6 Phase 3 (this turn)
+  - _**Single native executable** (the user's call): the binary is ONE self-contained,
+    offline executable per OS — **not a folder**. The Piper TTS subprocess is a *mode*
+    of the same binary (it re-runs itself with a `--__ov_piper` sentinel; see
+    `ownvoicereader_entry.py` / `tts_engine.PIPER_SENTINEL`), so the macOS `.app` holds
+    exactly one executable and there is no sibling `piper` exe. **Validated on Linux:**
+    the onedir builds and the single binary ran Piper in self-exec mode (a 148 KB WAV
+    from the bundled voice).
+  - _**Per-OS native package** (the user's call — "not a dir that makes installing
+    harder"): Linux ships the **AppImage** (run-anywhere, needs FUSE) AND a native
+    **`.deb`** (the one-click **Ubuntu/Debian** installer — double-click → *Ubuntu
+    Software*/*GDebi*, + a menu entry + a PDF association); macOS a real **`.app`**
+    wrapped in a **`.dmg`** (drag-to-install); Windows an **Inno Setup `.exe`**. The
+    portable folder-zips are **dropped** — the installers are the deliverable.
+  - _**macOS is Apple Silicon (arm64) only** (the user's call): the `.dmg` is an arm64
+    `.app` and won't run on an Intel Mac. An Intel Mac uses the **command-line version**
+    (`pip install "ownvoicereader[server,ocr,vision]"` then `ownvoicereader [paper.pdf]`,
+    browser or `--no-browser`) — documented in the README *Desktop app* + quickstart
+    §2.4 so an Intel user finds the path.
+  - _**CI matrix** (`.github/workflows/build.yml`): `test` (ubuntu, the full suite) →
+    `build` (ubuntu/macos/windows, each its native installer + a TTS smoke) → `release`
+    (publishes on a `v*` tag; a `workflow_dispatch` builds + uploads without publishing).
+    Voice via Git LFS; no build output ever touches git (`.gitignore` guards it)._
+  - _Validated here (Linux): the onedir builds, Piper self-exec synthesizes a WAV, the
+    `.deb` builds (499 M), full suite exit 0. The `.dmg`/`.exe`/AppImage-extraction are
+    unvalidatable in this box (no mac/win runner, no FUSE) — the first CI run validates
+    them._
 > 📝 comment: A12 (`--auto --no-browser` headless polish) was **scrapped** as a
 > planning item — the existing `--auto` / `_run_headless` code + its tests stay;
 > the headless path remains functional, it's just no longer an M6 task.
